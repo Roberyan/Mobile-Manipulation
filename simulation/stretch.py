@@ -39,6 +39,12 @@ class Robot:
        self.p.resetJointState(self.robotId, self.camera_index, -0.3)
        self.p.resetJointState(self.robotId, 4, 0.5)
 
+   # get position and orientation info
+   # pos: x,y,z
+   # ori: x,y,z,w (quaternion)
+    def get_positon_and_orientation(self):
+       pos, ori = self.p.getBasePositionAndOrientation(self.robotId)
+       return pos, ori
 
     def get_observation(self):
        camera_link_pos = self.p.getLinkState(self.robotId,self.camera_index)[0]

@@ -355,37 +355,62 @@ for _ in range(30):
 
 mobot.get_observation()
 
+################################################
+from simulation.nav_utils import NavMap
+nav_map = NavMap(p,plane_id, grid_resolution=0.1)
+# nav_map.show_map()
+# nav_map.add_object(wall_id)
+# nav_map.add_object(bed_id)
+# nav_map.add_object(table_id)
+
+
+# 
+min_robot, max_robot = p.getAABB(mobot.robotId)
+robot_width = max_robot[0] - min_robot[0]
+robot_depth = max_robot[1] - min_robot[1]
+robot_radius = max(robot_width, robot_depth) / 2.0
+
+print("###########################")
+
 while (1):
     time.sleep(1./240.)
-    keys = p.getKeyboardEvents()
-    leftWheelVelocity=0
-    rightWheelVelocity=0
-
-    for k,v in keys.items():
-
-        if (k == p.B3G_RIGHT_ARROW and (v&p.KEY_WAS_TRIGGERED)):
-                turn = -0.8
-        if (k == p.B3G_RIGHT_ARROW and (v&p.KEY_WAS_RELEASED)):
-                turn = 0
-        if (k == p.B3G_LEFT_ARROW and (v&p.KEY_WAS_TRIGGERED)):
-                turn = 0.8
-        if (k == p.B3G_LEFT_ARROW and (v&p.KEY_WAS_RELEASED)):
-                turn = 0
-
-        if (k == p.B3G_UP_ARROW and (v&p.KEY_WAS_TRIGGERED)):
-                forward=1
-        if (k == p.B3G_UP_ARROW and (v&p.KEY_WAS_RELEASED)):
-                forward=0
-        if (k == p.B3G_DOWN_ARROW and (v&p.KEY_WAS_TRIGGERED)):
-                forward=-1
-        if (k == p.B3G_DOWN_ARROW and (v&p.KEY_WAS_RELEASED)):
-                forward=0
-
-    rightWheelVelocity+= (forward+turn)*speed
-    leftWheelVelocity += (forward-turn)*speed
     
-    p.setJointMotorControl2(mobot.robotId,0,p.VELOCITY_CONTROL,targetVelocity=leftWheelVelocity,force=1000)
-    p.setJointMotorControl2(mobot.robotId,1,p.VELOCITY_CONTROL,targetVelocity=rightWheelVelocity,force=1000)
-
+    robot_pos, robot_ori_qua = mobot.get_positon_and_orientation()
+    
+    
     mobot.get_observation()
+
+# while (1):
+#     time.sleep(1./240.)
+#     keys = p.getKeyboardEvents()
+#     leftWheelVelocity=0
+#     rightWheelVelocity=0
+
+#     for k,v in keys.items():
+
+#         if (k == p.B3G_RIGHT_ARROW and (v&p.KEY_WAS_TRIGGERED)):
+#                 turn = -0.8
+#         if (k == p.B3G_RIGHT_ARROW and (v&p.KEY_WAS_RELEASED)):
+#                 turn = 0
+#         if (k == p.B3G_LEFT_ARROW and (v&p.KEY_WAS_TRIGGERED)):
+#                 turn = 0.8
+#         if (k == p.B3G_LEFT_ARROW and (v&p.KEY_WAS_RELEASED)):
+#                 turn = 0
+
+#         if (k == p.B3G_UP_ARROW and (v&p.KEY_WAS_TRIGGERED)):
+#                 forward=1
+#         if (k == p.B3G_UP_ARROW and (v&p.KEY_WAS_RELEASED)):
+#                 forward=0
+#         if (k == p.B3G_DOWN_ARROW and (v&p.KEY_WAS_TRIGGERED)):
+#                 forward=-1
+#         if (k == p.B3G_DOWN_ARROW and (v&p.KEY_WAS_RELEASED)):
+#                 forward=0
+
+#     rightWheelVelocity+= (forward+turn)*speed
+#     leftWheelVelocity += (forward-turn)*speed
+    
+#     p.setJointMotorControl2(mobot.robotId,0,p.VELOCITY_CONTROL,targetVelocity=leftWheelVelocity,force=1000)
+#     p.setJointMotorControl2(mobot.robotId,1,p.VELOCITY_CONTROL,targetVelocity=rightWheelVelocity,force=1000)
+
+#     mobot.get_observation()
 
