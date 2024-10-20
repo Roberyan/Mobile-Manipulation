@@ -114,46 +114,47 @@ class NavMap:
         for i in range(self.grid_size_x):
             for j in range(self.grid_size_y):
                 unique_objects.update(self.map[i][j].get_objects().keys())
-        
-        # Use a color map to assign a unique color to each object
-        colormap = plt.get_cmap('tab10')  # You can choose other colormaps like 'hsv', 'tab20', etc.
-        colors = {obj_id: colormap(i % 10) for i, obj_id in enumerate(unique_objects)}
-        
-        # Draw the grid lines
-        for i in range(self.grid_size_x + 1):
-            x = self.x_min + i * self.grid_resolution
-            ax.plot([x, x], [self.y_min, self.y_min + self.grid_size_y * self.grid_resolution], color='gray', linewidth=0.5)
-        for j in range(self.grid_size_y + 1):
-            y = self.y_min + j * self.grid_resolution
-            ax.plot([self.x_min, self.x_min + self.grid_size_x * self.grid_resolution], [y, y], color='gray', linewidth=0.5)
 
-        # Mark the objects in the grid
+        # Use a color map to assign a unique color to each object
+        colormap = plt.get_cmap('tab20')
+        colors = {obj_id: colormap(i % 20) for i, obj_id in enumerate(unique_objects)}
+
+        # Draw grid cells with plt.Rectangle and mark objects using scatter
         for i in range(self.grid_size_x):
             for j in range(self.grid_size_y):
                 node = self.map[i][j]
-                # If the node has objects, plot them as points in the grid cell
                 objects = node.get_objects()
-                for obj_id in objects:
-                    x = self.x_min + i * self.grid_resolution + self.grid_resolution / 2.0  # Center of the cell in x
-                    y = self.y_min + j * self.grid_resolution + self.grid_resolution / 2.0  # Center of the cell in y
-                    ax.scatter(x, y, color=colors[obj_id], s=50, label=f'Object {obj_id}' if i + j == 0 else "")
+                x = i  # Rectangle grid coordinate
+                y = j
+                # Add a rectangle for the cell
+                ax.add_patch(plt.Rectangle((x, y), 1, 1, color='lightgray', edgecolor='gray', alpha=0.5))
 
-        # Set axis limits and labels
-        ax.set_xlim([self.x_min, self.x_min + self.grid_size_x * self.grid_resolution])
-        ax.set_ylim([self.y_min, self.y_min + self.grid_size_y * self.grid_resolution])
-        ax.set_xlabel("X (meters)")
-        ax.set_ylabel("Y (meters)")
-        ax.set_title("2D Grid Map with Objects")
+                # If the node has objects, scatter points in the center of the grid cell
+                for obj_id in objects:
+                    ax.scatter(x + 0.5, y + 0.5, color=colors[obj_id], s=50)
+
+        # Set grid axis labels to match grid coordinates
+        ax.set_xlim([0, self.grid_size_x])
+        ax.set_ylim([0, self.grid_size_y])
+        ax.set_xticks(np.arange(0, self.grid_size_x + 1, 1))
+        ax.set_yticks(np.arange(0, self.grid_size_y + 1, 1))
+        ax.set_xticklabels(np.arange(0, self.grid_size_x + 1, 1))
+        ax.set_yticklabels(np.arange(0, self.grid_size_y + 1, 1))
+
+        # Set axis labels and title
+        ax.set_xlabel('Grid X')
+        ax.set_ylabel('Grid Y')
+        ax.set_title('2D Grid Map with Objects')
         ax.grid(True)
 
         # Create a custom legend to show the object ID with corresponding colors
         handles = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[obj_id], markersize=10, label=f'Object {obj_id}') for obj_id in unique_objects]
-        ax.legend(handles=handles, loc='upper right',bbox_to_anchor=(1.4, 1))
-        
-        # Show the plot
+        ax.legend(handles=handles, loc='upper right', bbox_to_anchor=(1.2, 1), title="Object IDs")
+
+        plt.gca().set_aspect('equal', adjustable='box')
         plt.tight_layout()
         plt.show()
-    
+
     # TODO: implement a* algorithm                
     
     def world_to_grid(self, world_pos):
@@ -180,10 +181,8 @@ class NavMap:
             # Compare the robot's z-range with objects' z-ranges in the cell
             robot_min_z, robot_max_z = robot_z_range
             for obj_id, (obj_min_z, obj_max_z) in objects_in_cell.items():
-                # Skip the robot itself by checking the object ID
                 if obj_id == robot_id:
                     continue
-                # Check if the z-ranges overlap
                 if not (robot_max_z < obj_min_z or robot_min_z > obj_max_z):
                     return True
 
@@ -196,10 +195,16 @@ class NavMap:
         
         # Penalty for proximity to obstacles
         penalty = 0
-        if self.is_occupied(node1.x, node1.y):  # Check if the node is near an obstacle
-            penalty += 10  # Arbitrary penalty value to encourage avoidance
+        proximity_threshold = 2  # Number of grid cells considered 'near' an obstacle
         
-        return np.hypot(node1.x - node2.x, node1.y - node2.y)
+        for i in range(-proximity_threshold, proximity_threshold + 1):
+            for j in range(-proximity_threshold, proximity_threshold + 1):
+                nx, ny = node1.x + i, node1.y + j
+                if 0 <= nx < self.grid_size_x and 0 <= ny < self.grid_size_y and self.is_occupied(nx, ny):
+                    distance_to_obstacle = np.hypot(i, j)
+                    penalty += max(0, proximity_threshold - distance_to_obstacle)  # Apply higher penalty for closer obstacles
+        
+        return np.hypot(node1.x - node2.x, node1.y - node2.y) + penalty
     
     def reconstruct_path(self, current, closed_set):
         path = []
@@ -209,13 +214,11 @@ class NavMap:
         return path[::-1]  # Return reversed path
   
     def get_astar_map(self, robot_id, goal_id):
+        # Get robot's center position (from AABB)
         robot_aabb = self.p.getAABB(robot_id)
         min_x, min_y, min_z = robot_aabb[0]
         max_x, max_y, max_z = robot_aabb[1]
-        robot_center = (
-            (min_x + max_x) / 2,  # center_x
-            (min_y + max_y) / 2   # center_y
-        )
+        robot_center = ((min_x + max_x)/2, (min_y + max_y)/2)
         robot_z_range = (min_z, max_z)
         
         # Get goal's center position (from AABB)
@@ -228,115 +231,144 @@ class NavMap:
         # Convert world coordinates to grid coordinates
         start_x, start_y = self.world_to_grid(robot_center)
         goal_x, goal_y = self.world_to_grid(goal_center)
+        
         # Create start and goal nodes
         start_node = AStarNode(start_x, start_y, 0.0, -1)
         goal_node = AStarNode(goal_x, goal_y, 0.0, -1)
         
         # Initialize open and closed sets
         open_set = {}
-        closed_set = {}
+        visited = {}
         open_set[(start_node.x, start_node.y)] = start_node
         
         pq = []
         heapq.heappush(
             pq, 
-            (start_node.cost + self.get_heuristic(start_node, goal_node), 
-             (start_node.x, start_node.y)))
+            (start_node.cost + self.get_heuristic(start_node, goal_node), (start_node.x, start_node.y))
+        )
         
         while pq:
-            _, current_coord = heapq.heappop(pq)            
-            # Check if the node is in the open set (lazy deletion)
+            _, current_coord = heapq.heappop(pq)
+                        
+            # Skip outdated nodes
             if current_coord not in open_set:
-                continue  # Skip outdated nodes
+                continue  
             
             current = open_set[current_coord]
-            # get node info to check if reach the goal
             node_objects = self.map[current.x][current.y].get_objects()
+            
+            # get node info to check if reach the goal
             if goal_id in node_objects:
                 print("Path found!")
-                return self.reconstruct_path(current, closed_set)
+                return self.reconstruct_path(current, visited)
             
-            # Move current node from open to closed set
+            # update information
             del open_set[current_coord]
-            closed_set[current_coord] = current
+            visited[current_coord] = current
             
-            # Explore neighbors
+            # Explore neighbors (8 grids nearby)
             for action in self.actions:
                 new_x = current.x + action[0]
                 new_y = current.y + action[1]
-                new_cost = current.cost + action[2]
+                new_cost = current.cost + action[2] # travel length
                 
-                # Check if the new node is within bounds
+                # Check if within bounds
                 if new_x < 0 or new_x >= self.grid_size_x or new_y < 0 or new_y >= self.grid_size_y:
                     continue
                 
-                # If node is already in closed set, skip it
-                if (new_x, new_y) in closed_set:
+                # skip if is already visited 
+                if (new_x, new_y) in visited:
                     continue
                 
                 new_node = AStarNode(new_x, new_y, new_cost, (current.x, current.y))
-                
-                # # Check if the region is occupied for the robot
-                # new_robot_aabb_min_x = self.x_min + new_x * self.grid_resolution
-                # new_robot_aabb_max_x = new_robot_aabb_min_x + (max_x - min_x)
-                # new_robot_aabb_min_y = self.y_min + new_y * self.grid_resolution
-                # new_robot_aabb_max_y = new_robot_aabb_min_y + (max_y - min_y)
 
+                # check if available for robot to move
                 if self.is_occupied(new_x, new_y, robot_id, robot_z_range):
-                    continue  # Skip this neighbor if it's occupied
+                    continue  
                 
                 # If node is new or has a better path, add it to open set
-                if (new_x, new_y) not in open_set or open_set[(new_x, new_y)].cost > new_node.cost:
+                if (new_x, new_y) not in open_set or \
+                    open_set[(new_x, new_y)].cost > new_node.cost:
+                    
                     open_set[(new_x, new_y)] = new_node
                     heapq.heappush(
                         pq, 
-                        (new_node.cost + self.get_heuristic(new_node, goal_node), (new_x, new_y)))
+                        (new_node.cost + self.get_heuristic(new_node, goal_node), (new_x, new_y))
+                    )
 
         # Return None if no path is found
         print("No available path found.")
         return None
     
-    def visualize_astar(self, path, robot_id, goal_id):
+    def visualize_astar_points(self, path, robot_id, goal_id):
         fig, ax = plt.subplots(figsize=(8, 8))
 
-        # Visualize the grid: Occupied space (gray), free space (white)
+        # Create a color map for different objects, similar to show_map
+        unique_objects = set()
         for i in range(self.grid_size_x):
             for j in range(self.grid_size_y):
-                if self.is_occupied(i, j):
-                    ax.add_patch(plt.Rectangle((i, j), 1, 1, color='gray'))
-                else:
-                    ax.add_patch(plt.Rectangle((i, j), 1, 1, color='white', edgecolor='black'))
+                unique_objects.update(self.map[i][j].get_objects().keys())
 
-        # Draw the A* path
+        # Use a color map to assign a unique color to each object
+        colormap = plt.get_cmap('tab20')
+        colors = {obj_id: colormap(i % 20) for i, obj_id in enumerate(unique_objects)}
+
+        # Draw grid cells with plt.Rectangle and mark objects using scatter
+        for i in range(self.grid_size_x):
+            for j in range(self.grid_size_y):
+                node = self.map[i][j]
+                objects = node.get_objects()
+                x = i  # Rectangle grid coordinate
+                y = j
+                # Add a rectangle for the cell
+                ax.add_patch(plt.Rectangle((x, y), 1, 1, color='lightgray', edgecolor='gray', alpha=0.5))
+
+                # If the node has objects, scatter points in the center of the grid cell
+                for obj_id in objects:
+                    ax.scatter(x + 0.5, y + 0.5, color=colors[obj_id], s=50)
+
+        # Draw the A* path (if found)
         if path:
             path_x, path_y = zip(*path)
-            ax.plot(path_x, path_y, color='blue', linewidth=2, label='A* Path')
+            ax.plot([x + 0.5 for x in path_x], [y + 0.5 for y in path_y], color='blue', linewidth=2, label='A* Path')
 
-        # Mark the robot position (green)
+        # Mark the robot position (green circle)
         robot_aabb = self.p.getAABB(robot_id)
         robot_center = (
             (robot_aabb[0][0] + robot_aabb[1][0]) / 2,
             (robot_aabb[0][1] + robot_aabb[1][1]) / 2
         )
         robot_x, robot_y = self.world_to_grid(robot_center)
-        ax.plot(robot_x, robot_y, 'go', markersize=10, label='Robot')
+        ax.scatter(robot_x + 0.5, robot_y + 0.5, color='green', s=100, label='Robot', marker='o')
 
-        # Mark the goal position (yellow star)
+        # Mark the goal position (red star)
         goal_aabb = self.p.getAABB(goal_id)
         goal_center = (
             (goal_aabb[0][0] + goal_aabb[1][0]) / 2,
             (goal_aabb[0][1] + goal_aabb[1][1]) / 2
         )
         goal_x, goal_y = self.world_to_grid(goal_center)
-        ax.plot(goal_x, goal_y, '*', color='yellow', markersize=15, label='Goal')
+        ax.scatter(goal_x + 0.5, goal_y + 0.5, color='red', s=200, label='Goal', marker='*')
 
+        # Set grid axis labels to match grid coordinates
         ax.set_xlim([0, self.grid_size_x])
         ax.set_ylim([0, self.grid_size_y])
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_title('A* Path Visualization')
-        ax.legend()
+        ax.set_xticks(np.arange(0, self.grid_size_x + 1, 1))
+        ax.set_yticks(np.arange(0, self.grid_size_y + 1, 1))
+        ax.set_xticklabels(np.arange(0, self.grid_size_x + 1, 1))
+        ax.set_yticklabels(np.arange(0, self.grid_size_y + 1, 1))
+
+        # Set axis labels and title
+        ax.set_xlabel('Grid X')
+        ax.set_ylabel('Grid Y')
+        ax.set_title('A* Path Visualization on 2D Grid')
+        ax.grid(True)
+
+        ax.legend(loc='upper right', bbox_to_anchor=(1.2, 1), title="Legend")
+        
         plt.gca().set_aspect('equal', adjustable='box')
+        plt.tight_layout()
         plt.show()
+
       
                 

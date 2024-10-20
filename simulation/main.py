@@ -357,10 +357,11 @@ mobot.get_observation()
 
 ################################################
 from simulation.nav_utils import NavMap
-nav_map = NavMap(p, plane_id, grid_resolution=0.1)
+nav_map = NavMap(p, plane_id, grid_resolution=0.08)
 
 nav_map.label_objects()
-nav_map.visualize_astar(nav_map.get_astar_map(mobot.robotId, drawer_id), mobot.robotId, drawer_id)
+goal_id = drawer_id
+nav_map.visualize_astar(nav_map.get_astar_map(mobot.robotId, goal_id), mobot.robotId, goal_id)
 
 print("###########################")
 
