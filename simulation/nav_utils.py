@@ -166,7 +166,7 @@ class NavMap:
         grid_y = int((y - self.y_min) / self.grid_resolution)
         return grid_x, grid_y
     
-    def is_occupied(self, x, y, robot_id=None, robot_z_range=None):
+    def is_occupied(self, x, y, goal_id=None, robot_id=None, robot_z_range=None):
         """
         check if is collision free universally or for specific object
         """
@@ -175,13 +175,13 @@ class NavMap:
             objects_in_cell = node.get_objects()
             
             # no id and range provided, means check universal occupation
-            if robot_id is None:
+            if goal_id is None or robot_id is None:
                 return bool(objects_in_cell)
             
             # Compare the robot's z-range with objects' z-ranges in the cell
             robot_min_z, robot_max_z = robot_z_range
             for obj_id, (obj_min_z, obj_max_z) in objects_in_cell.items():
-                if obj_id == robot_id:
+                if obj_id in [robot_id, goal_id]:
                     continue
                 if not (robot_max_z < obj_min_z or robot_min_z > obj_max_z):
                     return True
@@ -283,7 +283,7 @@ class NavMap:
                 new_node = AStarNode(new_x, new_y, new_cost, (current.x, current.y))
 
                 # check if available for robot to move
-                if self.is_occupied(new_x, new_y, robot_id, robot_z_range):
+                if self.is_occupied(new_x, new_y, goal_id, robot_id, robot_z_range):
                     continue  
                 
                 # If node is new or has a better path, add it to open set
@@ -300,7 +300,7 @@ class NavMap:
         print("No available path found.")
         return None
     
-    def visualize_astar_points(self, path, robot_id, goal_id):
+    def visualize_astar(self, path, robot_id, goal_id):
         fig, ax = plt.subplots(figsize=(8, 8))
 
         # Create a color map for different objects, similar to show_map
@@ -310,8 +310,8 @@ class NavMap:
                 unique_objects.update(self.map[i][j].get_objects().keys())
 
         # Use a color map to assign a unique color to each object
-        colormap = plt.get_cmap('tab20')
-        colors = {obj_id: colormap(i % 20) for i, obj_id in enumerate(unique_objects)}
+        colormap = plt.get_cmap('tab10')
+        colors = {obj_id: colormap(i % 10) for i, obj_id in enumerate(unique_objects)}
 
         # Draw grid cells with plt.Rectangle and mark objects using scatter
         for i in range(self.grid_size_x):
