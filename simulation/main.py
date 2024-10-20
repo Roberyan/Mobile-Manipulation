@@ -357,18 +357,10 @@ mobot.get_observation()
 
 ################################################
 from simulation.nav_utils import NavMap
-nav_map = NavMap(p,plane_id, grid_resolution=0.1)
-# nav_map.show_map()
-# nav_map.add_object(wall_id)
-# nav_map.add_object(bed_id)
-# nav_map.add_object(table_id)
+nav_map = NavMap(p, plane_id, grid_resolution=0.1)
 
-
-# 
-min_robot, max_robot = p.getAABB(mobot.robotId)
-robot_width = max_robot[0] - min_robot[0]
-robot_depth = max_robot[1] - min_robot[1]
-robot_radius = max(robot_width, robot_depth) / 2.0
+nav_map.label_objects()
+nav_map.visualize_astar(nav_map.get_astar_map(mobot.robotId, drawer_id), mobot.robotId, drawer_id)
 
 print("###########################")
 
