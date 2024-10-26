@@ -4,12 +4,27 @@ Default Course Project of CS4278/CS5478 Intelligent Robots: Algorithms and Syste
 ![Scene](imgs/scene.png)
 
 
-In this project, you should accomplish:
+In this project, the task is to:
 
-1. Navigate the robot to the bedside table to see the cup. The goal image is at `imgs/goal.png`.
-2. Pick up the cup.
-3. Open the drawer and place the cup in it, then close the drawer.
+1. Navigate the Mobot to the drawer
+2. Pick up the mug
+3. Place it into the drawer
 
+We provide an example control code for the robot in `simulation/main.py`.
+
+# Requirement
+
+You should implement the navigation and motion planning algorithms by yourself to accomplish the task.
+
+# Update
+
+2024/10/25: add attach and detach functions for grasping in `simulation/main.py`. Now you can use this to grasp and release the mug. Try it!
+
+2024/10/24: add useful tools in `utils/tools.py`.
+
+2024/10/22: fix the gravity coefficient; add useful tools in `utils/tools.py`.
+
+2024/10/21: add keyboard control example code in `simulation/main.py`.
 
 
 # Installation
@@ -20,8 +35,7 @@ In this project, you should accomplish:
 
 3. `pip3 install pybullet numpy`
 
-4. `git clone git@github.com:NUS-LinS-Lab/Mobile-Manipulation.
-git`
+4. `git clone https://github.com/NUS-LinS-Lab/Mobile-Manipulation.git`
 
 # Run
 
@@ -29,4 +43,6 @@ git`
 
 # References
 
-PyBullet Documentation: https://pybullet.org/wordpress/index.php/forum-2/
+PyBullet Documentation: https://pybullet.org/wordpress/index.php/forum-2/.
+
+You can also use ChatGPT or Cursor to get the API of PyBullet.

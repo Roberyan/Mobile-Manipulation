@@ -1,10 +1,50 @@
 <?xml version="1.0"?>
 <robot name="stretch">
+  <link name="world_base"/>
+  <link name="world_base_z_lift"/>
+
+  <joint name="z_lift_fixed_joint" type="fixed">
+    <parent link="world_base" />
+    <child link="world_base_z_lift" />
+    <origin xyz="0 0 0.005" rpy="0 0 0" />
+  </joint>
+
+  <link name="virtual_link_x"/>
+  <link name="virtual_link_y"/>
+
+  <!-- Prismatic Joint for Forward and Backward Movement -->
+  <joint name="base_prismatic_joint_x" type="prismatic">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="world_base_z_lift" />
+    <child link="virtual_link_x" />
+    <axis xyz="1 0 0" />
+    <limit lower="-200.0" upper="200.0" effort="1000" velocity="1.0" />
+  </joint>
+
+  <joint name="base_prismatic_joint_y" type="prismatic">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="virtual_link_x" />
+    <child link="virtual_link_y" />
+    <axis xyz="0 1 0" />
+    <limit lower="-200.0" upper="200.0" effort="1000" velocity="1.0" />
+  </joint>
+
+  <!-- Continuous Joint for Z-axis Rotation -->
+  <joint name="base_rotation_joint" type="continuous">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="virtual_link_y" />
+    <child link="base_link" />
+    <axis xyz="0 0 1" />
+    <dynamics damping="0.1" friction="0.1" />
+  </joint>
+
+  <!-- original base offset:       xyz="-0.087526 -0.001626 0.081009" -->
+ 
  <link
     name="base_link">
     <inertial>
       <origin
-        xyz="-0.087526 -0.001626 0.081009"
+        xyz="0 0 0.081009"
         rpy="0 0 0" />
       <mass
         value="173.84389" />
@@ -975,7 +1015,7 @@
       link="left_link_finger" />
     <axis
       xyz="1 0 0" />
-    <limit effort="100" lower="-0.05" upper="0.0" velocity="1.0"/>
+    <limit effort="100" lower="-0.03" upper="0.02" velocity="1.0"/>
   </joint>
 
  <link name="right_link_finger">
@@ -984,7 +1024,7 @@
           <geometry>
             <box size="0.01 0.03 0.03" />
           </geometry>
-          <material name="blakc">
+          <material name="black">
             <color rgba="0 .0 .0 1.0"/>
           </material>
     </visual>
@@ -1012,7 +1052,7 @@
       link="right_link_finger" />
     <axis
       xyz="1 0 0" />
-    <limit effort="100" lower="0" upper="0.05" velocity="1.0"/>
+    <limit effort="100" lower="-0.02" upper="0.03" velocity="1.0"/>
   </joint>
 
 </robot>
