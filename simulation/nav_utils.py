@@ -51,7 +51,7 @@ class NavMap:
             if obj_id == plane_id:
                 continue
             
-            obj_aabb = self.p.getAABB(obj_id)
+            obj_aabb = self.getAABB(obj_id)
             min_x, min_y, _ = obj_aabb[0]
             max_x, max_y, _ = obj_aabb[1]
 
@@ -87,7 +87,7 @@ class NavMap:
             self.add_object(obj_id)
     
     def add_object(self, object_id):
-        obj_aabb = self.p.getAABB(object_id)
+        obj_aabb = self.getAABB(object_id)
         min_x, min_y, min_z = obj_aabb[0]
         max_x, max_y, max_z = obj_aabb[1]
         
@@ -155,6 +155,32 @@ class NavMap:
         plt.tight_layout()
         plt.show()
 
+    # Provided getAABB fix the problem
+    def getLinkInfo(self, object_id):
+        numJoint = self.p.getNumJoints(object_id)
+        LinkList = ['base']
+        for jointIndex in range(numJoint):
+            jointInfo = self.p.getJointInfo(object_id, jointIndex)
+            link_name = jointInfo[12]
+            if link_name not in LinkList:
+                LinkList.append(link_name)
+        return LinkList
+
+    def getNumLinks(self, object_id):
+        return len(self.getLinkInfo(object_id))
+    
+    def getAABB(self, object_id):
+        numLinks = self.getNumLinks(object_id)
+        AABB_List = []
+        for link_id in range(-1, numLinks - 1):
+            AABB_List.append(self.p.getAABB(object_id, link_id))
+        AABB_array = np.array(AABB_List)
+        AABB_obj_min = np.min(AABB_array[:, 0, :], axis=0)
+        AABB_obj_max = np.max(AABB_array[:, 1, :], axis=0)
+        AABB_obj = np.array([AABB_obj_min, AABB_obj_max])
+        
+        return AABB_obj
+    
     # TODO: implement a* algorithm                
     
     def world_to_grid(self, world_pos):
@@ -215,14 +241,14 @@ class NavMap:
   
     def get_astar_map(self, robot_id, goal_id):
         # Get robot's center position (from AABB)
-        robot_aabb = self.p.getAABB(robot_id)
+        robot_aabb = self.getAABB(robot_id)
         min_x, min_y, min_z = robot_aabb[0]
         max_x, max_y, max_z = robot_aabb[1]
         robot_center = ((min_x + max_x)/2, (min_y + max_y)/2)
         robot_z_range = (min_z, max_z)
         
         # Get goal's center position (from AABB)
-        goal_aabb = self.p.getAABB(goal_id)
+        goal_aabb = self.getAABB(goal_id)
         goal_center = (
             (goal_aabb[0][0] + goal_aabb[1][0]) / 2,  # center_x
             (goal_aabb[0][1] + goal_aabb[1][1]) / 2   # center_y
@@ -333,7 +359,7 @@ class NavMap:
             ax.plot([x + 0.5 for x in path_x], [y + 0.5 for y in path_y], color='blue', linewidth=2, label='A* Path')
 
         # Mark the robot position (green circle)
-        robot_aabb = self.p.getAABB(robot_id)
+        robot_aabb = self.getAABB(robot_id)
         robot_center = (
             (robot_aabb[0][0] + robot_aabb[1][0]) / 2,
             (robot_aabb[0][1] + robot_aabb[1][1]) / 2
@@ -342,7 +368,7 @@ class NavMap:
         ax.scatter(robot_x + 0.5, robot_y + 0.5, color='green', s=100, label='Robot', marker='o')
 
         # Mark the goal position (red star)
-        goal_aabb = self.p.getAABB(goal_id)
+        goal_aabb = self.getAABB(goal_id)
         goal_center = (
             (goal_aabb[0][0] + goal_aabb[1][0]) / 2,
             (goal_aabb[0][1] + goal_aabb[1][1]) / 2
