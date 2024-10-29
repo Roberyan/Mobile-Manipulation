@@ -11,7 +11,7 @@ p.connect(p.GUI)
 p.configureDebugVisualizer(p.COV_ENABLE_GUI, 1)
 p.setGravity(0, 0, -9.81)
 
-mobot = init_scene(p)
+mobot, objects_dict = init_scene(p)
     
 forward=0
 turn=0
@@ -23,6 +23,28 @@ roll=0
 yaw=0
 
 mobot.get_observation()
+
+from simulation.nav_utils import NavMap
+nav_map = NavMap(p, objects_dict['plane'], grid_resolution=0.08)
+
+nav_map.label_objects()
+goal_id = objects_dict['mug']
+nav_map.visualize_astar(nav_map.get_astar_map(mobot.robotId, goal_id), mobot.robotId, goal_id)
+
+print("###########################")
+
+'''
+from simulation.nav_utils import NavMap
+nav_map = NavMap(p, plane_id, grid_resolution=0.08)
+
+nav_map.label_objects()
+goal_id = drawer_id
+nav_map.visualize_astar(nav_map.get_astar_map(mobot.robotId, goal_id), mobot.robotId, goal_id)
+
+print("###########################")
+
+'''
+
 
 constraint = None
 while (1):
@@ -110,37 +132,4 @@ while (1):
     
     mobot.get_observation()
 
-# while (1):
-#     time.sleep(1./240.)
-#     keys = p.getKeyboardEvents()
-#     leftWheelVelocity=0
-#     rightWheelVelocity=0
-
-#     for k,v in keys.items():
-
-#         if (k == p.B3G_RIGHT_ARROW and (v&p.KEY_WAS_TRIGGERED)):
-#                 turn = -0.8
-#         if (k == p.B3G_RIGHT_ARROW and (v&p.KEY_WAS_RELEASED)):
-#                 turn = 0
-#         if (k == p.B3G_LEFT_ARROW and (v&p.KEY_WAS_TRIGGERED)):
-#                 turn = 0.8
-#         if (k == p.B3G_LEFT_ARROW and (v&p.KEY_WAS_RELEASED)):
-#                 turn = 0
-
-#         if (k == p.B3G_UP_ARROW and (v&p.KEY_WAS_TRIGGERED)):
-#                 forward=1
-#         if (k == p.B3G_UP_ARROW and (v&p.KEY_WAS_RELEASED)):
-#                 forward=0
-#         if (k == p.B3G_DOWN_ARROW and (v&p.KEY_WAS_TRIGGERED)):
-#                 forward=-1
-#         if (k == p.B3G_DOWN_ARROW and (v&p.KEY_WAS_RELEASED)):
-#                 forward=0
-
-#     rightWheelVelocity+= (forward+turn)*speed
-#     leftWheelVelocity += (forward-turn)*speed
-    
-#     p.setJointMotorControl2(mobot.robotId,0,p.VELOCITY_CONTROL,targetVelocity=leftWheelVelocity,force=1000)
-#     p.setJointMotorControl2(mobot.robotId,1,p.VELOCITY_CONTROL,targetVelocity=rightWheelVelocity,force=1000)
-
-#     mobot.get_observation()
 

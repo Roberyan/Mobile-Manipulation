@@ -12,12 +12,12 @@ sys.path.append('./')
 
 def init_scene(p):
     root_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),"../")
-
+    object_dict = {} # store object and its id
     ################ Plane Environment
     plane_id = p.loadURDF(os.path.join(root_dir,"resource/urdf/plane.urdf"), [0, 0, 0])
     plane_texture_id = p.loadTexture(os.path.join(root_dir,"resource/texture/texture1.jpg"))
     p.changeVisualShape(0,-1,textureUniqueId=plane_texture_id)
-
+    object_dict['plane'] = plane_id
     ################ Robot
     mobot_urdf_file = os.path.join(root_dir,"resource/urdf/stretch/stretch.urdf")
     mobot = Robot(pybullet_api=p, start_pos=[-0.8,0.0,0.03], urdf_file=mobot_urdf_file)
@@ -40,7 +40,7 @@ def init_scene(p):
                                           basePosition=(table_depth / 2.0 + 0.1, 0.05, table_height / 2.0))
     table_color = [128 / 255.0, 128 / 255.0, 128 / 255.0, 1.0]
     p.changeVisualShape(table_id, -1, rgbaColor=table_color)
-
+    object_dict['table'] = table_id
     ################
     wall_height = 2.2
     wall_width = table_width + 4.0
@@ -57,18 +57,18 @@ def init_scene(p):
                                              baseCollisionShapeIndex=wall_c2,\
                                              baseVisualShapeIndex=wall_v2,\
                                              basePosition=(wall_center_x, -1.4, wall_height/2.0))
-
+    object_dict['wall'] = wall_id
     wall_id_back = p.createMultiBody(mass,\
                                              baseCollisionShapeIndex=wall_c,\
                                              baseVisualShapeIndex=wall_v,\
                                              basePosition=(wall_center_x-3.0, -1.9, wall_height/2.0))
 
-
+    object_dict['wall_back'] = wall_id_back
     wall_id_front = p.createMultiBody(mass,\
                                              baseCollisionShapeIndex=wall_c,\
                                              baseVisualShapeIndex=wall_v,\
                                              basePosition=(wall_center_x+3.0, -1.9, wall_height/2.0))
-
+    object_dict['wall_front'] = wall_id_front
     wall_width_left = 2.0
     wall_width_right = 6.0
     wall_depth = 0.02
@@ -104,6 +104,9 @@ def init_scene(p):
     p.changeVisualShape(wall_left_id,-1,rgbaColor=wall_color)
     p.changeVisualShape(wall_right_id,-1,rgbaColor=wall_color)
     p.changeVisualShape(wall_id,-1,rgbaColor=wall_color)
+    object_dict['wall_left'] = wall_left_id
+    object_dict['wall_right'] = wall_right_id
+    object_dict['wall_right2'] = wall_right_id2    
 
     urdf_dir = os.path.join(root_dir,"resource/urdf")
 
@@ -132,7 +135,7 @@ def init_scene(p):
     cabinet2_position = (cabinet_center_x,  cabinet_center_y, cabinet_center_z)
     #p.resetBasePositionAndOrientation(cabinet1_id, cabinet1_position, cabinet1_orientation)
     p.resetBasePositionAndOrientation(cabinet2_id, cabinet2_position, cabinet2_orientation)
-
+    object_dict['cabinet'] = cabinet2_id
     ############################
     #### fridge initialization
     fridge_position = [0.7, -3.22, 0.9]
@@ -143,7 +146,7 @@ def init_scene(p):
                                     basePosition=fridge_position, \
                                     baseOrientation=fridge_orientation, \
                                     globalScaling=fridge_scaling)
-
+    object_dict['fridge'] = fridge_id
 
     #######
     table_z = p.getAABB(table_id)[1][2]
@@ -155,7 +158,7 @@ def init_scene(p):
                                     baseOrientation=drawer_orientation, \
                                     globalScaling=drawer_scaling, \
                                     useFixedBase=True)
-
+    object_dict['drawer'] = drawer_id
     #### bed
     #### table initialization
     bed_height = 0.7#0.12 * 2.0
@@ -170,7 +173,7 @@ def init_scene(p):
                                           basePosition=(bed_depth / 2.0 + 1.9, -1.45, bed_height / 2.0))
     bed_color = [128 / 255.0, 128 / 255.0, 128 / 255.0, 1.0]
     p.changeVisualShape(bed_id, -1, rgbaColor=bed_color)
-
+    object_dict['bed'] = bed_id
     #### microwave initialization
     table_z = p.getAABB(table_id)[1][2]
     microwave_position = [0.35, 0.72, table_z + 0.15]
@@ -188,6 +191,7 @@ def init_scene(p):
     p.changeVisualShape(microwave_id, 2, rgbaColor=[0.5, 0.5, 0.5, 1])
     p.changeVisualShape(microwave_id, 3, rgbaColor=[0.2, 0.2, 0.2, 1])
     p.resetJointState(microwave_id, 1, np.pi/2.0, 0.0)
+    object_dict['microwave'] = microwave_id
     #####
 
     box_position = [2.25, -3.5 , 0.2]
@@ -209,7 +213,7 @@ def init_scene(p):
     p.resetJointState(box_id, 1, 0.9, 0.0)
     for ji in range(numJoint):
         p.setJointMotorControl2(box_id, ji, p.VELOCITY_CONTROL, force=0.5)
-
+    object_dict['box'] = box_id
     ############################
     bottle_position = [drawer_position[0]+0.1, drawer_position[1]+0.1, table_z+0.49]
     bottle_scaling = 0.2
@@ -230,7 +234,7 @@ def init_scene(p):
     #p.changeDynamics(bottle_id, -1, linearDamping=20.0)
     #p.changeDynamics(bottle_id, -1, angularDamping=20.0)
     #p.changeDynamics(bottle_id, -1, contactStiffness=0.1, contactDamping=0.1)
-
+    object_dict['bottle'] = bottle_id
 
     bowl_position = [0.4, -0.6, table_z + 0.15]
     bowl_scaling = 0.2
@@ -254,7 +258,8 @@ def init_scene(p):
     #p.changeDynamics(self.bowl_id, -1, linearDamping=20.0)
     #p.changeDynamics(self.bowl_id, -1, angularDamping=20.0)
     #p.changeDynamics(self.bowl_id, -1, contactStiffness=0.9, contactDamping=0.9)
-
+    object_dict['bowl'] = bowl_id
+    
     mug_position = [0.25, -0.93, 1.53]
     mug_orientation = p.getQuaternionFromEuler([np.pi / 2.0, 0, np.pi - np.pi / 2.0])
     mug_scaling = 0.2
@@ -269,7 +274,7 @@ def init_scene(p):
     p.changeDynamics(mug_id, -1, rollingFriction=obj_friction_ceof)
     p.changeDynamics(mug_id, -1, spinningFriction=obj_friction_ceof)
     p.changeDynamics(mug_id, -1, mass=0.01)
-
+    object_dict['mug'] = mug_id
 
     trashbin_position = [-1.1, -4.01, 0.48]
     trashbin_scaling = 1.0
@@ -280,6 +285,7 @@ def init_scene(p):
                                     baseOrientation=trashbin_orientation, \
                                     globalScaling=trashbin_scaling)
     p.changeVisualShape(trashbin_id, -1, rgbaColor=[200 / 255., 179 / 255., 179 / 255., 1])
+    object_dict['trashbin'] = trashbin_id
 
     pan_position = [0.35, .2, table_z + 0.05]
     pan_scaling = 0.6
@@ -292,6 +298,7 @@ def init_scene(p):
                                  flags=p.URDF_USE_MATERIAL_COLORS_FROM_MTL)
     p.changeVisualShape(pan_id, 1, rgbaColor=[0.9, 0.9, 0.9, 1.0])
     p.changeDynamics(pan_id, -1, mass=0.001)
+    object_dict['pan'] = pan_id
 
     spatula_position = np.copy(np.array(pan_position))
     spatula_position[1] -= 0.3
@@ -307,7 +314,7 @@ def init_scene(p):
 
     p.changeVisualShape(spatula_id, -1, rgbaColor=[0 / 255.0, 179 / 255., 179 / 255., 1])
     p.changeDynamics(spatula_id, -1, mass=0.01)
-
+    object_dict['spatula'] = spatula_id
 
     mug_position = [drawer_position[0]-0.15, drawer_position[1], 2.3]
     mug_orientation = p.getQuaternionFromEuler([np.pi/2.0, 0, np.pi + np.pi/2.0])
@@ -321,6 +328,7 @@ def init_scene(p):
     obj_friction_ceof = 4000.0
     p.changeDynamics(mug_id, -1, lateralFriction=obj_friction_ceof)
     p.changeDynamics(mug_id, -1, mass=0.01)
+    object_dict['mug2'] = mug_id
     
     for _ in range(20):
         p.stepSimulation()
@@ -338,7 +346,7 @@ def init_scene(p):
     for _ in range(30):
         p.stepSimulation()
 
-    return mobot
+    return mobot, object_dict
 
 
 def get_global_action_from_local(robot, delta_forward):
