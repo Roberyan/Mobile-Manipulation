@@ -25,9 +25,10 @@ yaw=0
 mobot.get_observation()
 
 from simulation.nav_utils import NavMap
-nav_map = NavMap(p, objects_dict['plane'], grid_resolution=0.08)
-
+nav_map = NavMap(p, mobot.robotId, objects_dict, grid_resolution=0.11)
 nav_map.label_objects()
+# nav_map.show_map()
+
 goal_id = objects_dict['mug2']
 nav_map.visualize_astar(nav_map.get_astar_map(mobot.robotId, goal_id), mobot.robotId, goal_id)
 

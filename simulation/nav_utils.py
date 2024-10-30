@@ -8,12 +8,12 @@ class Node:
         self.y = y
         self.objects = {} # store object and its z coordinate
     
-    def add_object(self, object_id, z_range):
-        self.objects[object_id] = z_range
+    def add_object(self, object_tuple, z_range):
+        self.objects[object_tuple] = z_range
     
-    def remove_object(self, object_id):
-        if object_id in self.objects:
-            del self.objects[object_id]
+    def remove_object(self, object_tuple):
+        if object_tuple in self.objects:
+            del self.objects[object_tuple]
     
     def get_objects(self):
         return self.objects
@@ -38,17 +38,19 @@ class NavMap:
         [-1, -1, np.sqrt(2)]  # Diagonal down-left
     ]
     
-    def __init__(self, p, plane_id, grid_resolution,) -> None:
+    def __init__(self, p, robotId, objects_dict, grid_resolution,) -> None:
         self.p = p
         self.grid_resolution = grid_resolution
         # Initialize min and max bounds with extreme values
         self.x_min, self.y_min = float('inf'), float('inf')
         self.x_max, self.y_max = float('-inf'), float('-inf')
+        self.objects_dict = objects_dict
+        self.robotId = robotId
         
-        num_bodies = p.getNumBodies()
-        object_ids = [p.getBodyUniqueId(i) for i in range(num_bodies)]
-        for obj_id in object_ids:
-            if obj_id == plane_id:
+        self.objects_dict['robot'] = robotId
+        
+        for obj, obj_id in self.objects_dict.items():
+            if obj == 'plane':
                 continue
             
             obj_aabb = self.getAABB(obj_id)
@@ -65,7 +67,7 @@ class NavMap:
         self.grid_size_y = int((self.y_max-self.y_min)/grid_resolution)
         self.map = [[Node(x, y) for y in range(self.grid_size_y)] for x in range(self.grid_size_x)]
         
-        self.background_id = plane_id
+        self.background_id = self.objects_dict['plane']
            
     def label_boundary(self):
         # label boundary
@@ -79,15 +81,13 @@ class NavMap:
     
     def label_objects(self, no_label_id=[]):
         no_label_id.append(self.background_id)
-        num_bodies = self.p.getNumBodies()
-        object_ids = [self.p.getBodyUniqueId(i) for i in range(num_bodies)]
-        for obj_id in object_ids:
+        for obj, obj_id in self.objects_dict.items():
             if obj_id in no_label_id:
                 continue
-            self.add_object(obj_id)
+            self.add_object((obj, obj_id))
     
-    def add_object(self, object_id):
-        obj_aabb = self.getAABB(object_id)
+    def add_object(self, obj_tuple):
+        obj_aabb = self.getAABB(obj_tuple[1])
         min_x, min_y, min_z = obj_aabb[0]
         max_x, max_y, max_z = obj_aabb[1]
         
@@ -104,7 +104,7 @@ class NavMap:
         
         for i in range(grid_min_x, grid_max_x+1):
             for j in range(grid_min_y, grid_max_y+1):
-                self.map[i][j].add_object(object_id, (min_z,max_z))
+                self.map[i][j].add_object(obj_tuple, (min_z, max_z))
     
     def show_map(self):
         fig, ax = plt.subplots(figsize=(8, 8))
@@ -113,25 +113,33 @@ class NavMap:
         unique_objects = set()
         for i in range(self.grid_size_x):
             for j in range(self.grid_size_y):
-                unique_objects.update(self.map[i][j].get_objects().keys())
+                obj_tuples = self.map[i][j].get_objects().keys()
+                for obj_tuple in obj_tuples:
+                    obj_name = obj_tuple[0]
+                    if "wall" in obj_name:
+                        obj_name = "wall"
+                    unique_objects.add(obj_name)
 
         # Use a color map to assign a unique color to each object
         colormap = plt.get_cmap('tab20')
-        colors = {obj_id: colormap(i % 20) for i, obj_id in enumerate(unique_objects)}
+        colors = {obj_name: colormap(i % 20) for i, obj_name in enumerate(unique_objects)}
 
         # Draw grid cells with plt.Rectangle and mark objects using scatter
         for i in range(self.grid_size_x):
             for j in range(self.grid_size_y):
                 node = self.map[i][j]
-                objects = node.get_objects()
+                object_tuples = node.get_objects()
                 x = i  # Rectangle grid coordinate
                 y = j
                 # Add a rectangle for the cell
-                ax.add_patch(plt.Rectangle((x, y), 1, 1, color='lightgray', edgecolor='gray', alpha=0.5))
+                ax.add_patch(plt.Rectangle((x, y), 1, 1, color='white', edgecolor='gray', alpha=0.5))
 
                 # If the node has objects, scatter points in the center of the grid cell
-                for obj_id in objects:
-                    ax.scatter(x + 0.5, y + 0.5, color=colors[obj_id], s=50)
+                for obj_tuple in object_tuples:
+                    obj_name = obj_tuple[0]
+                    if "wall" in obj_name:
+                        obj_name = "wall"
+                    ax.scatter(x + 0.5, y + 0.5, color=colors[obj_name], s=50)
 
         # Set grid axis labels to match grid coordinates
         ax.set_xlim([0, self.grid_size_x])
@@ -144,12 +152,12 @@ class NavMap:
         # Set axis labels and title
         ax.set_xlabel('Grid X')
         ax.set_ylabel('Grid Y')
-        ax.set_title('2D Grid Map with Objects')
+        ax.set_title(f'2D Grid Map / {self.grid_resolution}')
         ax.grid(True)
 
         # Create a custom legend to show the object ID with corresponding colors
-        handles = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[obj_id], markersize=10, label=f'Object {obj_id}') for obj_id in unique_objects]
-        ax.legend(handles=handles, loc='upper right', bbox_to_anchor=(1.2, 1), title="Object IDs")
+        handles = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors[obj_name], markersize=10, label=f'{obj_name}') for obj_name in unique_objects]
+        ax.legend(handles=handles, loc='upper right', bbox_to_anchor=(1.2, 1), title="Objects")
 
         plt.gca().set_aspect('equal', adjustable='box')
         plt.tight_layout()
@@ -206,7 +214,7 @@ class NavMap:
             
             # Compare the robot's z-range with objects' z-ranges in the cell
             robot_min_z, robot_max_z = robot_z_range
-            for obj_id, (obj_min_z, obj_max_z) in objects_in_cell.items():
+            for (obj_name, obj_id), (obj_min_z, obj_max_z) in objects_in_cell.items():
                 if obj_id in [robot_id, goal_id]:
                     continue
                 if not (robot_max_z < obj_min_z or robot_min_z > obj_max_z):
@@ -281,7 +289,7 @@ class NavMap:
                 continue  
             
             current = open_set[current_coord]
-            node_objects = self.map[current.x][current.y].get_objects()
+            node_objects = [obj_tuple[1] for obj_tuple in self.map[current.x][current.y].get_objects().keys()]
             
             # get node info to check if reach the goal
             if goal_id in node_objects:
@@ -333,25 +341,33 @@ class NavMap:
         unique_objects = set()
         for i in range(self.grid_size_x):
             for j in range(self.grid_size_y):
-                unique_objects.update(self.map[i][j].get_objects().keys())
+                obj_tuples = self.map[i][j].get_objects().keys()
+                for obj_tuple in obj_tuples:
+                    obj_name = obj_tuple[0]
+                    if "wall" in obj_name:
+                        obj_name = "wall"
+                    unique_objects.add(obj_name)
 
         # Use a color map to assign a unique color to each object
-        colormap = plt.get_cmap('tab10')
-        colors = {obj_id: colormap(i % 10) for i, obj_id in enumerate(unique_objects)}
+        colormap = plt.get_cmap('tab20')
+        colors = {obj_name: colormap(i % 20) for i, obj_name in enumerate(unique_objects)}
 
         # Draw grid cells with plt.Rectangle and mark objects using scatter
         for i in range(self.grid_size_x):
             for j in range(self.grid_size_y):
                 node = self.map[i][j]
-                objects = node.get_objects()
+                object_tuples = node.get_objects()
                 x = i  # Rectangle grid coordinate
                 y = j
                 # Add a rectangle for the cell
-                ax.add_patch(plt.Rectangle((x, y), 1, 1, color='lightgray', edgecolor='gray', alpha=0.5))
+                ax.add_patch(plt.Rectangle((x, y), 1, 1, color='white', edgecolor='gray', alpha=0.5))
 
                 # If the node has objects, scatter points in the center of the grid cell
-                for obj_id in objects:
-                    ax.scatter(x + 0.5, y + 0.5, color=colors[obj_id], s=50)
+                for obj_tuple in object_tuples:
+                    obj_name = obj_tuple[0]
+                    if "wall" in obj_name:
+                        obj_name = "wall"
+                    ax.scatter(x + 0.5, y + 0.5, color=colors[obj_name], s=50)
 
         # Draw the A* path (if found)
         if path:

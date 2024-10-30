@@ -1,6 +1,10 @@
 import numpy as np
 import pybullet as p
 
+def checkObject2DSize(obj_id):
+    m, M = getAABB(obj_id)
+    return (M-m)[:-1]
+
 def get_robot_base_pose(p, robot_id):
     # base_link_index
     link_index = 4
