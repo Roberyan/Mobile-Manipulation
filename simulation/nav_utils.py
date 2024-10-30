@@ -222,6 +222,13 @@ class NavMap:
 
         return False  # No object or no z-range collision, the cell is free
     
+    def is_occupied_range(self, x, y, goal_id, robot_id, robot_z_range, robot_range):
+        for x_r in range(robot_range):
+            for y_r in range(robot_range):
+                if self.is_occupied(x+x_r, y+y_r, goal_id, robot_id, robot_z_range):
+                    return True
+        return False  
+    
     def get_heuristic(self, node1, node2):
         """
         Calculate the heuristic (Euclidean distance) between two nodes.
@@ -247,7 +254,7 @@ class NavMap:
             current = closed_set.get(current.parent_index)
         return path[::-1]  # Return reversed path
   
-    def get_astar_map(self, robot_id, goal_id):
+    def get_astar_map(self, robot_id, goal_id, robot_range=4):
         # Get robot's center position (from AABB)
         robot_aabb = self.getAABB(robot_id)
         min_x, min_y, min_z = robot_aabb[0]
@@ -317,7 +324,7 @@ class NavMap:
                 new_node = AStarNode(new_x, new_y, new_cost, (current.x, current.y))
 
                 # check if available for robot to move
-                if self.is_occupied(new_x, new_y, goal_id, robot_id, robot_z_range):
+                if self.is_occupied_range(new_x, new_y, goal_id, robot_id, robot_z_range, robot_range):
                     continue  
                 
                 # If node is new or has a better path, add it to open set
