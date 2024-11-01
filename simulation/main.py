@@ -125,15 +125,53 @@ nav_map.label_objects() # capture all objects in the env
 # nav_map.show_map() # show 2D astar map
 goal_id = objects_dict['drawer'] # goad object
 astar_path = nav_map.get_astar_map(mobot.robotId, goal_id) # astar planning from robot's position to goal position
-
 if astar_path is not None:
     # nav_map.visualize_astar(astar_path, mobot.robotId, goal_id) # show 2d astar map with planned path    
     navigator = RobotNavigator(p, mobot, nav_map, astar_path, goal_id) # navigator to move robot
     navigator.show_path_in_world() # show planned path in simulation env
     navigator.move_according_to_path() # move according to planned path
     
-print("--------------------")
 
 
+total_driving_distance = 0
+previous_position, _, _ = get_robot_base_pose(p, mobot.robotId)
+current_position = previous_position
+
+constraint = None
+
+navi_flag = False
+grasp_flag = False
+
+while (1):
+    time.sleep(1./240.)
+    keys = p.getKeyboardEvents()
 
 
+    mobot.get_observation()
+    
+    current_position, _, _ = get_robot_base_pose(p, mobot.robotId)
+    total_driving_distance += np.linalg.norm(np.array(current_position) - np.array(previous_position))
+    previous_position = current_position
+
+    if navi_flag == False:
+        if current_position[0] > 1.6 and current_position[1] > -0.35:
+            print("Reached the goal region! Total driving distance: ", total_driving_distance)
+            navi_flag = True
+        else:
+            print("Total driving distance: ", total_driving_distance)
+            print("Current position: ", current_position)
+    else:
+        print("Reached the goal region! Total driving distance: ", total_driving_distance)
+    
+    
+    if grasp_flag == False:
+        mug_position = get_mug_pose(p)
+        print("Mug position: ", mug_position)
+
+        if mug_position[0] > 3.3 and mug_position[0] < 3.5 \
+            and mug_position[1] > -0.17 and mug_position[1] < 0.25 \
+            and mug_position[2] > 0.71 and mug_position[2] < 0.75:
+            print("Mug is in the drawer!")
+            grasp_flag = True
+    else:
+        print("Mug is in the drawer!")

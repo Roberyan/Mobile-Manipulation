@@ -12,7 +12,7 @@ import os
 
 sys.path.append('./')
 
-def init_scene(p):
+def init_scene(p, mug_random=False):
     root_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),"../")
     object_dict = {} # store object and its id
     ################ Plane Environment
@@ -318,8 +318,13 @@ def init_scene(p):
     p.changeDynamics(spatula_id, -1, mass=0.01)
     object_dict['spatula'] = spatula_id
 
-    mug_position = [drawer_position[0]-0.15, drawer_position[1], 2.3]
+    mug_position = [drawer_position[0]-0.15, drawer_position[1], 1.5]
     mug_orientation = p.getQuaternionFromEuler([np.pi/2.0, 0, np.pi + np.pi/2.0])
+    if mug_random:
+        mug_position[0] += np.random.uniform(-0.05,0.1)
+        mug_position[1] += np.random.uniform(-0.1,0.1)
+        mug_orientation = p.getQuaternionFromEuler([np.pi/2.0, 0, np.pi + np.pi/2.0 + np.random.uniform(-np.pi/4.0,np.pi/4.0)])
+
     mug_scaling = 0.25
     mug_id = p.loadURDF(fileName=os.path.join(urdf_dir,"obj_libs/mugs/m1/model.urdf"),
                                     useFixedBase=False,
@@ -330,7 +335,7 @@ def init_scene(p):
     obj_friction_ceof = 4000.0
     p.changeDynamics(mug_id, -1, lateralFriction=obj_friction_ceof)
     p.changeDynamics(mug_id, -1, mass=0.01)
-    object_dict['mug2'] = mug_id
+    # mug id: 21
     
     for _ in range(20):
         p.stepSimulation()
@@ -471,3 +476,6 @@ class Robot:
         depth_image = Image.fromarray(depth_16bit)
         full_depth_filename = full_filename + ".tiff"
         depth_image.save(full_depth_filename)
+    
+    def get_position(self):
+        return self.p.getBasePositionAndOrientation(self.robotId)[0]
