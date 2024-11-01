@@ -1,0 +1,1 @@
+python run_offline.py --network ./trained-models/jacquard-rgbd-grconvnet3-drop0-ch32/epoch_48_iou_0.93 --rgb_path ./test.png --depth_path ./test.tiff --save 1 --n-grasps 5
