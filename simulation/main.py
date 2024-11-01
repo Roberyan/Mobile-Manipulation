@@ -109,6 +109,10 @@ while (1):
         if (k == ord('e') and (v & p.KEY_WAS_RELEASED)):
             gripper_open = 0
 
+        # take a picture
+        if ord('p') in keys and keys[ord('p')] & p.KEY_WAS_TRIGGERED:
+              mobot.save_image("./", "test")
+
     base_control(mobot, p, forward, turn)
     arm_control(mobot, p, up, stretch, roll, yaw)
 

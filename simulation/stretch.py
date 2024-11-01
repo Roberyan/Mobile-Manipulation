@@ -6,6 +6,8 @@ import time
 import pybullet as p
 
 import numpy as np
+from PIL import Image
+import os
 
 
 sys.path.append('./')
@@ -430,3 +432,42 @@ class Robot:
                                       viewMatrix = camera_view_matrix,
                                       projectionMatrix=camera_proj_matrix,
                                       renderer = p.ER_BULLET_HARDWARE_OPENGL)
+        
+    def save_image(self, filepath, filename):
+        camera_link_pos = self.p.getLinkState(self.robotId,self.camera_index)[0]
+        camera_link_ori = self.p.getLinkState(self.robotId,self.camera_index)[1]
+        camera_link_rotmat = self.p.getMatrixFromQuaternion(camera_link_ori)
+        camera_link_rotmat = np.array(camera_link_rotmat).reshape((3, 3))
+        camera_target_link_pos = np.array(camera_link_pos)
+        camera_target_link_pos = camera_target_link_pos + camera_link_rotmat[:,0]
+        camera_color = [0, 0 / 255.0, 0 / 255.0, 1.0]
+        self.p.changeVisualShape(self.robotId,self.camera_index,rgbaColor=[0,0,1])
+
+        camera_view_matrix = self.p.computeViewMatrix(cameraEyePosition=[camera_link_pos[0], camera_link_pos[1], camera_link_pos[2]],
+                                                    cameraTargetPosition=[camera_target_link_pos[0], camera_target_link_pos[1], camera_target_link_pos[2]],
+                                                    cameraUpVector=camera_link_rotmat[:,1])
+
+
+        ratio = 1.5
+        image_width = int(640 * ratio)
+        image_height = 480
+        #self.p.resetDebugVisualizerCamera(camera_distance, camera_yaw, camera_pitch, camera_target_position)
+        camera_proj_matrix = self.p.computeProjectionMatrixFOV(fov=45.0, aspect=1.0, nearVal=0.1, farVal=10)
+        #$initAxis(camera_link_pos, camera_link_ori)
+        width, height, rgb_img, depth_img, seg_mask = self.p.getCameraImage(width=image_width,
+                                                                            height=image_height,
+                                                                            viewMatrix = camera_view_matrix,
+                                                                            projectionMatrix=camera_proj_matrix,
+                                                                            renderer = p.ER_BULLET_HARDWARE_OPENGL)
+        rgb_image = Image.fromarray(np.reshape(rgb_img, (height, width, 4))[:, :, :3])
+        full_filename = os.path.join(filepath, filename)
+        full_image_filename = full_filename + ".png"
+        rgb_image.save(full_image_filename)
+
+        # Convert depth data to a 16-bit format and save it as a TIFF
+        # Scaling the depth buffer into a 16-bit range
+        depth_img = np.reshape(depth_img, (height, width))
+        depth_16bit = (depth_img * 65535).astype(np.uint16)
+        depth_image = Image.fromarray(depth_16bit)
+        full_depth_filename = full_filename + ".tiff"
+        depth_image.save(full_depth_filename)
