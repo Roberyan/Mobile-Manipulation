@@ -257,7 +257,8 @@ class NavMap:
         """
         check if is collision free universally or for specific object
         """
-        if 0 <= x < self.grid_size_x and 0 <= y < self.grid_size_y:
+        
+        if 0<=x<self.grid_size_x and 0<=y<self.grid_size_y:
             node = self.map[x][y]
             objects_in_cell = node.get_objects()
             
@@ -270,10 +271,15 @@ class NavMap:
             for (obj_name, obj_id), (obj_min_z, obj_max_z) in objects_in_cell.items():
                 if obj_id in [robot_id, goal_id]:
                     continue
-                   
+                
+                if "wall" in obj_name:
+                    return True
+                
                 if not (robot_max_z <= obj_min_z or robot_min_z >= obj_max_z):
                     return True
-
+        else:
+            return True
+        
         return False  # No object or no z-range collision, the cell is free
     
     def is_occupied_range(self, x, y, goal_id, robot_id, robot_z_range):
@@ -300,8 +306,8 @@ class NavMap:
                         not_occupied = False
                         break
                     
-                if not_occupied:
-                    return False
+            if not_occupied:
+                return False
 
         return True
     
@@ -323,13 +329,6 @@ class NavMap:
         
         return np.hypot(node1.x - node2.x, node1.y - node2.y) + penalty
     
-    def reconstruct_path(self, current, closed_set):
-        path = []
-        while current is not None:
-            path.append((current.x, current.y))
-            current = closed_set.get(current.parent_index)
-        return path[::-1]  # Return reversed path
-  
     def get_astar_map(self, robot_id, goal_id, consider_radius=True):
         # Get robot's center position (from AABB)
         base_aabb, arm_aabb = self.getAABB(robot_id)
@@ -437,6 +436,13 @@ class NavMap:
         self.visualize_astar(None, robot_id, goal_id, visited.keys())
         return None
     
+    def reconstruct_path(self, current, closed_set):
+        path = []
+        while current is not None:
+            path.append((current.x, current.y))
+            current = closed_set.get(current.parent_index)
+        return path[::-1]  # Return reversed path
+  
     def visualize_astar(self, path, robot_id, goal_id, explored_cells=None):
         fig, ax = plt.subplots(figsize=(8, 8))
 
