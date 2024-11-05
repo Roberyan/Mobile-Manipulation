@@ -46,16 +46,19 @@ class NavMap:
         self.x_max, self.y_max = float('-inf'), float('-inf')
         self.objects_dict = objects_dict
         self.robotId = robotId
-        
+        self.robot_threshold = 1.0 # distinguish base and arm
         self.objects_dict['robot'] = robotId
         
         for obj, obj_id in self.objects_dict.items():
             if obj == 'plane':
                 continue
             
-            obj_aabb = self.getAABB(obj_id)
-            min_x, min_y, _ = obj_aabb[0]
-            max_x, max_y, _ = obj_aabb[1]
+            if obj == 'robot':
+                pass
+            else:
+                obj_aabb = self.getAABB(obj_id)
+                min_x, min_y, _ = obj_aabb[0]
+                max_x, max_y, _ = obj_aabb[1]
 
             # Update the min and max coordinates
             self.x_min = min(self.x_min, min_x)
@@ -86,10 +89,9 @@ class NavMap:
                 continue
             self.add_object((obj, obj_id))
     
-    def add_object(self, obj_tuple):
-        obj_aabb = self.getAABB(obj_tuple[1])
-        min_x, min_y, min_z = obj_aabb[0]
-        max_x, max_y, max_z = obj_aabb[1]
+    def get_object_grid_with_zrange(self, aabb):
+        min_x, min_y, min_z = aabb[0]
+        max_x, max_y, max_z = aabb[1]
         
         grid_min_x = int((min_x - self.x_min)/self.grid_resolution)
         grid_max_x = int((max_x - self.x_min)/self.grid_resolution)
@@ -101,10 +103,26 @@ class NavMap:
         grid_max_x = max(0, min(grid_max_x, self.grid_size_x - 1))
         grid_min_y = max(0, min(grid_min_y, self.grid_size_y - 1))
         grid_max_y = max(0, min(grid_max_y, self.grid_size_y - 1))
-        
-        for i in range(grid_min_x, grid_max_x+1):
-            for j in range(grid_min_y, grid_max_y+1):
-                self.map[i][j].add_object(obj_tuple, (min_z, max_z))
+        return grid_min_x, grid_max_x, grid_min_y, grid_max_y, (min_z, max_z)
+
+    def add_object(self, obj_tuple):
+        if obj_tuple[0] == 'robot':
+            base_aabb, arm_aabb = self.getAABB(obj_tuple[1])
+            grid_min_x, grid_max_x, grid_min_y, grid_max_y, z_range = self.get_object_grid_with_zrange(base_aabb)
+            for i in range(grid_min_x, grid_max_x+1):
+                for j in range(grid_min_y, grid_max_y+1):
+                    self.map[i][j].add_object(('robot base' ,obj_tuple[1]), z_range)
+            
+            grid_min_x, grid_max_x, grid_min_y, grid_max_y, z_range = self.get_object_grid_with_zrange(arm_aabb)
+            for i in range(grid_min_x, grid_max_x+1):
+                for j in range(grid_min_y, grid_max_y+1):
+                    self.map[i][j].add_object(('robot arm' ,obj_tuple[1]), z_range)
+        else:
+            obj_aabb = self.getAABB(obj_tuple[1])
+            grid_min_x, grid_max_x, grid_min_y, grid_max_y, z_range = self.get_object_grid_with_zrange(obj_aabb)
+            for i in range(grid_min_x, grid_max_x+1):
+                for j in range(grid_min_y, grid_max_y+1):
+                    self.map[i][j].add_object(obj_tuple, z_range)
     
     def show_map(self):
         fig, ax = plt.subplots(figsize=(8, 8))
@@ -177,19 +195,42 @@ class NavMap:
     def getNumLinks(self, object_id):
         return len(self.getLinkInfo(object_id))
     
+    # treat robot as 2 parts: base and arm
     def getAABB(self, object_id):
         numLinks = self.getNumLinks(object_id)
-        AABB_List = []
-        for link_id in range(-1, numLinks - 1):
-            AABB_List.append(self.p.getAABB(object_id, link_id))
-        AABB_array = np.array(AABB_List)
-        AABB_obj_min = np.min(AABB_array[:, 0, :], axis=0)
-        AABB_obj_max = np.max(AABB_array[:, 1, :], axis=0)
-        AABB_obj = np.array([AABB_obj_min, AABB_obj_max])
-        
-        return AABB_obj
+        if object_id == self.robotId:
+            AABB_base = []
+            AABB_arm = []
+            for link_id in range(-1, numLinks - 1):
+                aabb = self.p.getAABB(object_id, link_id)
+                if aabb[1][2] <= self.robot_threshold:
+                    AABB_base.append(aabb)
+                else:
+                    AABB_arm.append(aabb)
+            
+            AABB_base_array = np.array(AABB_base)
+            AABB_base_min = np.min(AABB_base_array[:, 0, :], axis=0)
+            AABB_base_max = np.max(AABB_base_array[:, 1, :], axis=0)
+            AABB_base = np.array([AABB_base_min, AABB_base_max])
+            
+            AABB_arm_array = np.array(AABB_arm)
+            AABB_arm_min = np.min(AABB_arm_array[:, 0, :], axis=0)
+            AABB_arm_max = np.max(AABB_arm_array[:, 1, :], axis=0)
+            AABB_arm = np.array([AABB_arm_min, AABB_arm_max])
+            
+            return AABB_base, AABB_arm
+        else:
+            AABB_List = []
+            for link_id in range(-1, numLinks - 1):
+                AABB_List.append(self.p.getAABB(object_id, link_id))
+            AABB_array = np.array(AABB_List)
+            AABB_obj_min = np.min(AABB_array[:, 0, :], axis=0)
+            AABB_obj_max = np.max(AABB_array[:, 1, :], axis=0)
+            AABB_obj = np.array([AABB_obj_min, AABB_obj_max])
+            
+            return AABB_obj
     
-    # TODO: implement a* algorithm                
+    # A* algorithm                
     
     def world_to_grid(self, world_pos):
         """
