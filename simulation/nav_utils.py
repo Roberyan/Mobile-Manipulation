@@ -225,7 +225,10 @@ class NavMap:
     def is_occupied_range(self, x, y, goal_id, robot_id, robot_z_range, robot_range):
         for x_r in range(robot_range):
             for y_r in range(robot_range):
-                if self.is_occupied(x+x_r, y+y_r, goal_id, robot_id, robot_z_range):
+                if self.is_occupied(x+x_r, y+y_r, goal_id, robot_id, robot_z_range) or \
+                    self.is_occupied(x-x_r, y+y_r, goal_id, robot_id, robot_z_range) or \
+                    self.is_occupied(x+x_r, y-y_r, goal_id, robot_id, robot_z_range) or \
+                    self.is_occupied(x-x_r, y-y_r, goal_id, robot_id, robot_z_range):
                     return True
         return False  
     
