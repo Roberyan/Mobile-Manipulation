@@ -111,12 +111,12 @@ class NavMap:
             grid_min_x, grid_max_x, grid_min_y, grid_max_y, z_range = self.get_object_grid_with_zrange(base_aabb)
             for i in range(grid_min_x, grid_max_x+1):
                 for j in range(grid_min_y, grid_max_y+1):
-                    self.map[i][j].add_object(('robot base' ,obj_tuple[1]), z_range)
+                    self.map[i][j].add_object(('robot base', obj_tuple[1]), z_range)
             
             grid_min_x, grid_max_x, grid_min_y, grid_max_y, z_range = self.get_object_grid_with_zrange(arm_aabb)
             for i in range(grid_min_x, grid_max_x+1):
                 for j in range(grid_min_y, grid_max_y+1):
-                    self.map[i][j].add_object(('robot arm' ,obj_tuple[1]), z_range)
+                    self.map[i][j].add_object(('robot arm', obj_tuple[1]), z_range)
         else:
             obj_aabb = self.getAABB(obj_tuple[1])
             grid_min_x, grid_max_x, grid_min_y, grid_max_y, z_range = self.get_object_grid_with_zrange(obj_aabb)
@@ -181,6 +181,18 @@ class NavMap:
         plt.tight_layout()
         plt.show()
 
+    def show_direction(self, ax, robot_x, robot_y):
+        # Mark the robot direction
+        _, orientation = self.p.getBasePositionAndOrientation(self.robotId)
+        yaw = self.p.getEulerFromQuaternion(orientation)[2]
+        
+        # Convert the yaw angle into a direction vector
+        arrow_length = 1  # Length of the arrow
+        arrow_dx = arrow_length * np.cos(yaw)  # x-component
+        arrow_dy = arrow_length * np.sin(yaw)  # y-component
+        ax.arrow(
+            robot_x + 0.5, robot_y + 0.5, arrow_dx, arrow_dy, 
+            head_width=0.4, head_length=0.4, fc='yellow', ec='yellow')
     # Provided getAABB fix the problem
     def getLinkInfo(self, object_id):
         numJoint = self.p.getNumJoints(object_id)
@@ -258,20 +270,40 @@ class NavMap:
             for (obj_name, obj_id), (obj_min_z, obj_max_z) in objects_in_cell.items():
                 if obj_id in [robot_id, goal_id]:
                     continue
-                if not (robot_max_z < obj_min_z or robot_min_z > obj_max_z):
+                   
+                if not (robot_max_z <= obj_min_z or robot_min_z >= obj_max_z):
                     return True
 
         return False  # No object or no z-range collision, the cell is free
     
-    def is_occupied_range(self, x, y, goal_id, robot_id, robot_z_range, robot_range):
-        for x_r in range(robot_range):
-            for y_r in range(robot_range):
-                if self.is_occupied(x+x_r, y+y_r, goal_id, robot_id, robot_z_range) or \
-                    self.is_occupied(x-x_r, y+y_r, goal_id, robot_id, robot_z_range) or \
-                    self.is_occupied(x+x_r, y-y_r, goal_id, robot_id, robot_z_range) or \
-                    self.is_occupied(x-x_r, y-y_r, goal_id, robot_id, robot_z_range):
-                    return True
-        return False  
+    def is_occupied_range(self, x, y, goal_id, robot_id, robot_z_range):
+
+        # Define the four possible configurations to check
+        configurations = [
+            ((-2,2), (-2, 3)),
+            ((-2,2), (-3, 2)),
+            ((-2,3), (-2, 2)),
+            ((-3,2), (-2, 2))
+        ]
+
+        # Assume the grid is free unless all configurations have collisions
+        for (x_range, y_range) in configurations:
+            not_occupied = True
+
+            # Iterate over the specified range in both x and y directions
+            for x_offset in range(x_range[0], x_range[1] + 1):
+                for y_offset in range(y_range[0], y_range[1] + 1):
+                    check_x = x + x_offset
+                    check_y = y + y_offset
+
+                    if self.is_occupied(check_x, check_y, goal_id, robot_id, robot_z_range):
+                        not_occupied = False
+                        break
+                    
+                if not_occupied:
+                    return False
+
+        return True
     
     def get_heuristic(self, node1, node2):
         """
@@ -298,13 +330,16 @@ class NavMap:
             current = closed_set.get(current.parent_index)
         return path[::-1]  # Return reversed path
   
-    def get_astar_map(self, robot_id, goal_id, robot_range=4):
+    def get_astar_map(self, robot_id, goal_id, consider_radius=True):
         # Get robot's center position (from AABB)
-        robot_aabb = self.getAABB(robot_id)
-        min_x, min_y, min_z = robot_aabb[0]
-        max_x, max_y, max_z = robot_aabb[1]
+        base_aabb, arm_aabb = self.getAABB(robot_id)
+        # arm is within base in XY dimension
+        min_x, min_y, _ = base_aabb[0]
+        max_x, max_y, _ = base_aabb[1]
         robot_center = ((min_x + max_x)/2, (min_y + max_y)/2)
-        robot_z_range = (min_z, max_z)
+        
+        base_z_range = (base_aabb[0][2], base_aabb[1][2])
+        arm_z_range = (arm_aabb[0][2], arm_aabb[1][2])
         
         # Get goal's center position (from AABB)
         goal_aabb = self.getAABB(goal_id)
@@ -340,16 +375,28 @@ class NavMap:
                 continue  
             
             current = open_set[current_coord]
-            node_objects = [obj_tuple[1] for obj_tuple in self.map[current.x][current.y].get_objects().keys()]
+            node_objects = [obj_tuple for obj_tuple in self.map[current.x][current.y].get_objects().keys()]
             
+            visited[current_coord] = current
+
             # get node info to check if reach the goal
-            if goal_id in node_objects:
+            contain_goal = False
+            contain_wall = False
+            for obj_name, obj_id in node_objects:
+                if obj_id == goal_id:
+                    contain_goal = True
+                if "wall" in obj_name:
+                    contain_wall = True
+            
+            if contain_goal and not contain_wall:
                 print("Path found!")
                 return self.reconstruct_path(current, visited)
             
             # update information
             del open_set[current_coord]
-            visited[current_coord] = current
+            
+            if contain_wall:
+                continue
             
             # Explore neighbors (8 grids nearby)
             for action in self.actions:
@@ -368,8 +415,12 @@ class NavMap:
                 new_node = AStarNode(new_x, new_y, new_cost, (current.x, current.y))
 
                 # check if available for robot to move
-                if self.is_occupied_range(new_x, new_y, goal_id, robot_id, robot_z_range, robot_range):
-                    continue  
+                if consider_radius:
+                    if self.is_occupied_range(new_x, new_y, goal_id, robot_id, base_z_range):
+                        continue  
+                else:
+                    if self.is_occupied(new_x, new_y, goal_id, robot_id, base_z_range):
+                        continue  
                 
                 # If node is new or has a better path, add it to open set
                 if (new_x, new_y) not in open_set or \
@@ -383,9 +434,10 @@ class NavMap:
 
         # Return None if no path is found
         print("No available path found.")
+        self.visualize_astar(None, robot_id, goal_id, visited.keys())
         return None
     
-    def visualize_astar(self, path, robot_id, goal_id):
+    def visualize_astar(self, path, robot_id, goal_id, explored_cells=None):
         fig, ax = plt.subplots(figsize=(8, 8))
 
         # Create a color map for different objects, similar to show_map
@@ -394,14 +446,15 @@ class NavMap:
             for j in range(self.grid_size_y):
                 obj_tuples = self.map[i][j].get_objects().keys()
                 for obj_tuple in obj_tuples:
-                    obj_name = obj_tuple[0]
-                    if "wall" in obj_name:
-                        obj_name = "wall"
-                    unique_objects.add(obj_name)
+                    obj_name, obj_id = obj_tuple
+                    if obj_id in [robot_id, goal_id]:
+                        unique_objects.add(obj_name)
 
         # Use a color map to assign a unique color to each object
-        colormap = plt.get_cmap('tab20')
-        colors = {obj_name: colormap(i % 20) for i, obj_name in enumerate(unique_objects)}
+        colormap = plt.get_cmap('tab10')
+        colors = {obj_name: colormap(i % 10) for i, obj_name in enumerate(unique_objects)}
+        colors['others'] = 'gray'
+        colors['explored'] = 'lightblue' 
 
         # Draw grid cells with plt.Rectangle and mark objects using scatter
         for i in range(self.grid_size_x):
@@ -416,9 +469,14 @@ class NavMap:
                 # If the node has objects, scatter points in the center of the grid cell
                 for obj_tuple in object_tuples:
                     obj_name = obj_tuple[0]
-                    if "wall" in obj_name:
-                        obj_name = "wall"
+                    if obj_name not in colors.keys():
+                        obj_name = "others"
                     ax.scatter(x + 0.5, y + 0.5, color=colors[obj_name], s=50)
+
+        if explored_cells is not None:
+            # Mark all explored cells
+            for (x, y) in explored_cells:
+                ax.add_patch(plt.Rectangle((x, y), 1, 1, color=colors['explored'], alpha=0.5))
 
         # Draw the A* path (if found)
         if path:
@@ -426,13 +484,14 @@ class NavMap:
             ax.plot([x + 0.5 for x in path_x], [y + 0.5 for y in path_y], color='blue', linewidth=2, label='A* Path')
 
         # Mark the robot position (green circle)
-        robot_aabb = self.getAABB(robot_id)
+        base_aabb, _ = self.getAABB(robot_id)
         robot_center = (
-            (robot_aabb[0][0] + robot_aabb[1][0]) / 2,
-            (robot_aabb[0][1] + robot_aabb[1][1]) / 2
+            (base_aabb[0][0] + base_aabb[1][0]) / 2,
+            (base_aabb[0][1] + base_aabb[1][1]) / 2
         )
         robot_x, robot_y = self.world_to_grid(robot_center)
         ax.scatter(robot_x + 0.5, robot_y + 0.5, color='green', s=100, label='Robot', marker='o')
+        self.show_direction(ax, robot_x, robot_y)
 
         # Mark the goal position (red star)
         goal_aabb = self.getAABB(goal_id)
@@ -454,7 +513,7 @@ class NavMap:
         # Set axis labels and title
         ax.set_xlabel('Grid X')
         ax.set_ylabel('Grid Y')
-        ax.set_title('A* Path Visualization on 2D Grid')
+        ax.set_title('A* Path Visualization')
         ax.grid(True)
 
         ax.legend(loc='upper right', bbox_to_anchor=(1.2, 1), title="Legend")
