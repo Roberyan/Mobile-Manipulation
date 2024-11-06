@@ -71,6 +71,10 @@ class NavMap:
         self.map = [[Node(x, y) for y in range(self.grid_size_y)] for x in range(self.grid_size_x)]
         
         self.background_id = self.objects_dict['plane']
+        base, arm =self.getAABB(self.robotId)
+        _,_,_,_,self.base_z_range = self.get_object_grid_with_zrange(base)
+        _,_,_,_,self.arm_z_range = self.get_object_grid_with_zrange(arm)
+        
            
     def label_boundary(self):
         # label boundary
@@ -192,7 +196,7 @@ class NavMap:
         arrow_dy = arrow_length * np.sin(yaw)  # y-component
         ax.arrow(
             robot_x + 0.5, robot_y + 0.5, arrow_dx, arrow_dy, 
-            head_width=0.4, head_length=0.4, fc='yellow', ec='yellow')
+            head_width=0.4, head_length=0.4, fc='green', ec='green')
     # Provided getAABB fix the problem
     def getLinkInfo(self, object_id):
         numJoint = self.p.getNumJoints(object_id)
@@ -331,14 +335,11 @@ class NavMap:
     
     def get_astar_map(self, robot_id, goal_id, consider_radius=True):
         # Get robot's center position (from AABB)
-        base_aabb, arm_aabb = self.getAABB(robot_id)
+        base_aabb, _ = self.getAABB(robot_id)
         # arm is within base in XY dimension
         min_x, min_y, _ = base_aabb[0]
         max_x, max_y, _ = base_aabb[1]
         robot_center = ((min_x + max_x)/2, (min_y + max_y)/2)
-        
-        base_z_range = (base_aabb[0][2], base_aabb[1][2])
-        arm_z_range = (arm_aabb[0][2], arm_aabb[1][2])
         
         # Get goal's center position (from AABB)
         goal_aabb = self.getAABB(goal_id)
@@ -415,10 +416,10 @@ class NavMap:
 
                 # check if available for robot to move
                 if consider_radius:
-                    if self.is_occupied_range(new_x, new_y, goal_id, robot_id, base_z_range):
+                    if self.is_occupied_range(new_x, new_y, goal_id, robot_id, self.base_z_range):
                         continue  
                 else:
-                    if self.is_occupied(new_x, new_y, goal_id, robot_id, base_z_range):
+                    if self.is_occupied(new_x, new_y, goal_id, robot_id, self.base_z_range):
                         continue  
                 
                 # If node is new or has a better path, add it to open set
@@ -460,7 +461,8 @@ class NavMap:
         colormap = plt.get_cmap('tab10')
         colors = {obj_name: colormap(i % 10) for i, obj_name in enumerate(unique_objects)}
         colors['others'] = 'gray'
-        colors['explored'] = 'lightblue' 
+        colors['astar'] = 'lightblue'
+        colors['explored'] = 'lightyellow' 
 
         # Draw grid cells with plt.Rectangle and mark objects using scatter
         for i in range(self.grid_size_x):
@@ -488,7 +490,27 @@ class NavMap:
         if path:
             path_x, path_y = zip(*path)
             ax.plot([x + 0.5 for x in path_x], [y + 0.5 for y in path_y], color='blue', linewidth=2, label='A* Path')
+            
+            check_radius = 3
+            colors['astar']
+            radius_cells = set()
+            for (center_x, center_y) in path:
+                x_range = range(-check_radius, check_radius + 1)
+                y_range = range(-check_radius, check_radius + 1)
 
+                # Check each cell within the radius
+                for x_offset in x_range:
+                    for y_offset in y_range:
+                        check_x = center_x + x_offset
+                        check_y = center_y + y_offset
+
+                        # Ensure the cell is within grid bounds
+                        if not self.is_occupied(check_x, check_y, goal_id, robot_id, self.base_z_range):
+                            radius_cells.add((check_x, check_y))
+            
+            for (x, y) in radius_cells:
+                ax.add_patch(plt.Rectangle((x, y), 1, 1, color=colors['astar'], alpha=0.3))
+        
         # Mark the robot position (green circle)
         base_aabb, _ = self.getAABB(robot_id)
         robot_center = (
