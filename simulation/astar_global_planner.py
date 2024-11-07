@@ -315,23 +315,34 @@ class NavMap:
 
         return True
     
-    def get_heuristic(self, node1, node2):
+    def get_heuristic(self, node1, node2, goal_id, robot_id, robot_z_range):
         """
         Calculate the heuristic (Euclidean distance) between two nodes.
         """
         
+        base_heuristic = np.hypot(node1.x - node2.x, node1.y - node2.y)
+        
         # Penalty for proximity to obstacles
         penalty = 0
-        proximity_threshold = 2  # Number of grid cells considered 'near' an obstacle
+        proximity_threshold = 3  # Number of grid cells considered 'near' an obstacle
         
         for i in range(-proximity_threshold, proximity_threshold + 1):
             for j in range(-proximity_threshold, proximity_threshold + 1):
                 nx, ny = node1.x + i, node1.y + j
-                if 0 <= nx < self.grid_size_x and 0 <= ny < self.grid_size_y and self.is_occupied(nx, ny):
+                if 0 <= nx < self.grid_size_x and 0 <= ny < self.grid_size_y and self.is_occupied(nx, ny, goal_id, robot_id, robot_z_range):
                     distance_to_obstacle = np.hypot(i, j)
-                    penalty += max(0, proximity_threshold - distance_to_obstacle)  # Apply higher penalty for closer obstacles
+                    node_objects = self.map[nx][ny].get_objects().keys()
+                    is_wall = False
+                    for obj_name, _ in node_objects:
+                        if "wall" in obj_name:
+                            is_wall = True
+                            break
+                    if is_wall:
+                        penalty += max(0, (proximity_threshold - distance_to_obstacle)) * 1.5
+                    else:        
+                        penalty += max(0, proximity_threshold - distance_to_obstacle)  # Apply higher penalty for closer obstacles
         
-        return np.hypot(node1.x - node2.x, node1.y - node2.y) + penalty
+        return base_heuristic + penalty
     
     def get_astar_map(self, robot_id, goal_id, consider_radius=True):
         # Get robot's center position (from AABB)
@@ -364,7 +375,7 @@ class NavMap:
         pq = []
         heapq.heappush(
             pq, 
-            (start_node.cost + self.get_heuristic(start_node, goal_node), (start_node.x, start_node.y))
+            (start_node.cost + self.get_heuristic(start_node, goal_node, goal_id, robot_id, self.arm_z_range), (start_node.x, start_node.y))
         )
         
         while pq:
@@ -429,7 +440,7 @@ class NavMap:
                     open_set[(new_x, new_y)] = new_node
                     heapq.heappush(
                         pq, 
-                        (new_node.cost + self.get_heuristic(new_node, goal_node), (new_x, new_y))
+                        (new_node.cost + self.get_heuristic(new_node, goal_node, goal_id, robot_id, self.arm_z_range), (new_x, new_y))
                     )
 
         # Return None if no path is found
