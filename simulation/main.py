@@ -120,7 +120,7 @@ mobot.get_observation()
 nav_map = NavMap(p, mobot.robotId, objects_dict, grid_resolution=0.11)
 nav_map.label_objects() # capture all objects in the env
 # nav_map.show_map() # show 2D astar map
-goal_id = objects_dict['cabinet'] # goad object
+goal_id = objects_dict['drawer'] # goad object
 astar_path = nav_map.get_astar_map(mobot.robotId, goal_id) # astar planning from robot's position to goal position
 
 if astar_path is not None:
