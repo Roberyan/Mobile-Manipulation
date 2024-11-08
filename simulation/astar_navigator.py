@@ -5,6 +5,7 @@ import numpy as np
 class RobotNavigator:
     forward_speed = 0.1
     turn_speed = 0.1
+    reverse_move = False
     
     def __init__(self, p, robot, nav_map, astar_path):
         self.p = p
@@ -50,31 +51,54 @@ class RobotNavigator:
         return abs(current_tuple[0]-aim_tuple[0])<=self.nav_map.grid_resolution and \
             abs(current_tuple[1]-aim_tuple[1])<=self.nav_map.grid_resolution
     
+    def get_current_yaw(self):
+        orientation = self.p.getLinkState(self.robot.robotId, 3)[1]
+        _, _, yaw = self.p.getEulerFromQuaternion(orientation)
+        return yaw
+    
+    def get_current_position_2D(self):
+        position = self.p.getLinkState(self.robot.robotId, 3)[0]
+        return position[0], position[1]
+    
+    def turn_to_angle(self, target_angle):
+        while True:
+            current_yaw = self.get_current_yaw()
+            # Normalize to [-pi, pi]
+            angle_diff = (target_angle - current_yaw + np.pi) % (2 * np.pi) - np.pi
+
+            if abs(angle_diff) < 0.05:  # Stop turning when close enough to the target angle
+                base_control(self.robot, self.p, forward=0, turn=0)
+                break
+
+            turn_direction = np.sign(angle_diff)  # Determine clockwise or counterclockwise direction
+            base_control(self.robot, self.p, forward=0, turn=turn_direction * self.turn_speed)
+            time.sleep(1./240.)  # Step the simulation
+            self.p.stepSimulation()
+    
     def move_according_to_path(self):
         for aim_x, aim_y in self.world_path:
             while True:
                 time.sleep(1./240.)
                 self.p.stepSimulation()
                 
-                position = self.p.getLinkState(self.robot.robotId, 3)[0]
-                current_x, current_y = position[0], position[1]
+                current_x, current_y = self.get_current_position_2D()
                 if self.is_within_grid_resolution((current_x, current_y), (aim_x, aim_y)):
                     base_control(self.robot, self.p, forward=0, turn=0)
                     break
                 
-                orientation = self.p.getLinkState(self.robot.robotId, 3)[1]
-                _, _, yaw = self.p.getEulerFromQuaternion(orientation)
+                yaw = self.get_current_yaw()
                 
                 # aim direction difference and normalize to [-pi, pi]
                 angle_to_aim = np.arctan2(aim_y - current_y, aim_x - current_x)
-                angle_diff = angle_to_aim - yaw
-                angle_diff = (angle_diff + np.pi) % (2 * np.pi) - np.pi
+                self.turn_to_angle(angle_to_aim)
+                # angle_diff = angle_to_aim - yaw
+                # angle_diff = (angle_diff + np.pi) % (2 * np.pi) - np.pi
                 
-                # first turn to right direction
-                if abs(angle_diff) >= 0.1:
-                    turn = np.sign(angle_diff) * self.turn_speed
-                    base_control(self.robot, self.p, forward=0, turn=turn)
-                    continue
+                # # first turn to right direction
+                # if abs(angle_diff) >= 0.1:
+                #     turn = np.sign(angle_diff) * self.turn_speed
+                #     base_control(self.robot, self.p, forward=0, turn=turn)
+                #     continue
                 
                 # move after direction is correct
                 base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
