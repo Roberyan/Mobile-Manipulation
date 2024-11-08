@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import heapq
 
 class Node:
@@ -73,8 +74,7 @@ class NavMap:
         self.background_id = self.objects_dict['plane']
         base, arm =self.getAABB(self.robotId)
         _,_,_,_,self.base_z_range = self.get_object_grid_with_zrange(base)
-        _,_,_,_,self.arm_z_range = self.get_object_grid_with_zrange(arm)
-        
+        _,_,_,_,self.arm_z_range = self.get_object_grid_with_zrange(arm)   
            
     def label_boundary(self):
         # label boundary
@@ -185,6 +185,39 @@ class NavMap:
         plt.tight_layout()
         plt.show()
 
+    def visualize_base_arm_2d(self):
+        base_aabb, arm_aabb = self.getAABB(self.robotId)
+        fig, ax = plt.subplots(figsize=(8, 8))
+        # Plot the base AABB
+        base_rect = patches.Rectangle(
+            (base_aabb[0][0], base_aabb[0][1]),  # Bottom-left corner (x, y)
+            base_aabb[1][0] - base_aabb[0][0],   # Width (x2 - x1)
+            base_aabb[1][1] - base_aabb[0][1],   # Height (y2 - y1)
+            linewidth=2, edgecolor='blue', facecolor='none', label='Base'
+        )
+        ax.add_patch(base_rect)
+        
+        # Plot the arm AABB
+        arm_rect = patches.Rectangle(
+            (arm_aabb[0][0], arm_aabb[0][1]),    # Bottom-left corner (x, y)
+            arm_aabb[1][0] - arm_aabb[0][0],     # Width (x2 - x1)
+            arm_aabb[1][1] - arm_aabb[0][1],     # Height (y2 - y1)
+            linewidth=2, edgecolor='green', facecolor='none', label='Arm'
+        )
+        ax.add_patch(arm_rect)
+        
+        # Plot settings
+        ax.set_xlim(min(base_aabb[0][0], arm_aabb[0][0]) - 0.5, max(base_aabb[1][0], arm_aabb[1][0]) + 0.5)
+        ax.set_ylim(min(base_aabb[0][1], arm_aabb[0][1]) - 0.5, max(base_aabb[1][1], arm_aabb[1][1]) + 0.5)
+        ax.set_aspect('equal', adjustable='box')
+        ax.set_title('2D Visualization of Base and Arm AABBs')
+        ax.set_xlabel('X-axis')
+        ax.set_ylabel('Y-axis')
+        ax.legend()
+        
+        plt.grid(True)
+        plt.show()
+        
     def show_direction(self, ax, robot_x, robot_y):
         # Mark the robot direction
         _, orientation = self.p.getBasePositionAndOrientation(self.robotId)
@@ -247,7 +280,6 @@ class NavMap:
             return AABB_obj
     
     # A* algorithm                
-    
     def world_to_grid(self, world_pos):
         """
         Convert world coordinates (x, y) to grid coordinates.
