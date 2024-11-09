@@ -2,10 +2,12 @@ from stretch import base_control
 import time
 import numpy as np
 from utils.tools import *
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 class RobotNavigator:
     forward_speed = 0.1
-    turn_speed = 0.1
+    turn_speed = 0.3
     reverse_move = 0
     base_index = 3
     
@@ -17,14 +19,28 @@ class RobotNavigator:
         self.astar_path = astar_path
         self.world_path = [self.map_to_world(x, y) for x, y in astar_path]
         self.get_robot_base_arm_metric()
-    
+        
+        self.path_point_id = self.p.createVisualShape(
+            shapeType=self.p.GEOM_SPHERE,
+            radius=self.nav_map.grid_resolution*0.2,
+            rgbaColor=[1, 0, 0, 1]  # Bright orange color for start points
+        )
+        self.sample_point_id = self.p.createVisualShape(
+            shapeType=self.p.GEOM_SPHERE,
+            radius=self.nav_map.grid_resolution*0.2,
+            rgbaColor=[0, 1, 0, 1]  # Bright orange color for start points
+        )
+
+        self.collision_free_obj_ids = [self.nav_map.objects_dict['plane'], self.robot.robotId]
+        self.nav_path_visualize_ids = []
+        self.sample_points_ids = []
+        
     def get_robot_base_arm_metric(self):
         base_aabb, arm_aabb = self.nav_map.getAABB(self.robot.robotId)
         self.base_length, self.base_width, self.base_height = base_aabb[1] - base_aabb[0]
         self.arm_length, self.arm_width, self.arm_height = arm_aabb[1] - arm_aabb[0]
-        self.base_height += base_aabb[0][-1]
-        self.arm_height += arm_aabb[0][-1]
-        print("========")
+        self.base_z_range = (base_aabb[0][-1], base_aabb[1][-1])
+        self.arm_z_range = (arm_aabb[0][-1], arm_aabb[1][-1])
     
     def map_to_world(self, map_x, map_y):
         world_x = self.nav_map.x_min + map_x * self.nav_map.grid_resolution
@@ -34,30 +50,29 @@ class RobotNavigator:
     def show_path_in_world(self):
         print("Visualize planned path in the bullet simulation")
         n_points = len(self.world_path)
-        for i in range(n_points - 1):
-            start_point = self.world_path[i]
-            end_point = self.world_path[i+1]
-            start_point = (start_point[0], start_point[1], 0.0)
-            end_point = (end_point[0], end_point[1], 0.0)
-            self.p.addUserDebugLine(start_point, end_point, lineColorRGB=[1, 0, 0], lineWidth=5)
+        
+        for i in range(n_points):
+            point = self.world_path[i]
+            point_position = (point[0], point[1], 0)  # Adjust z for visibility
             
-            # Add a visual sphere at the start point for better visibility
-            sphere_radius = self.nav_map.grid_resolution * 0.5  # Make the size proportional to grid resolution
-            self.p.createVisualShape(
-                shapeType=self.p.GEOM_SPHERE,
-                radius=sphere_radius,
-                rgbaColor=[0, 1, 0, 1],  # Green color
-                visualFramePosition=start_point
+            # Place a sphere at each point along the path for better visibility
+            p_id = self.p.createMultiBody(
+                baseVisualShapeIndex=self.path_point_id,
+                basePosition=point_position
             )
+            self.nav_path_visualize_ids.append(p_id)
 
-            # Optionally, add a sphere at the end point (unless it's the last iteration)
-            if i == n_points - 2:
-                self.p.createVisualShape(
-                    shapeType=self.p.GEOM_SPHERE,
-                    radius=sphere_radius,
-                    rgbaColor=[0, 0, 1, 1],  # Blue color
-                    visualFramePosition=end_point
-                )
+            # # Draw lines connecting the points to form the path
+            # if i < n_points - 1:
+            #     next_point = self.world_path[i + 1]
+            #     next_point_position = (next_point[0], next_point[1], 0)  # Adjust z for visibility
+            #     l_id = self.p.addUserDebugLine(
+            #         point_position, 
+            #         next_point_position, 
+            #         lineColorRGB=[1, 1, 0],  # Red color for the path line
+            #         lineWidth=20
+            #     )
+            #     self.nav_path_visualize_ids.append(l_id)
     
     def is_within_grid_resolution(self, current_tuple, aim_tuple):
         return abs(current_tuple[0]-aim_tuple[0])<=self.nav_map.grid_resolution and \
@@ -143,12 +158,175 @@ class RobotNavigator:
                     base_control(self.robot, self.p, forward=0, turn=0)
                     break
                 
-                # turn to right direction
-                angle_to_aim = np.arctan2(aim_y - current_y, aim_x - current_x)
-                self.turn_to_angle(angle_to_aim)
-                
-                # move after direction is correct
-                print("Moving towards the aim postion")
-                base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
+                # Neither moving forward or backward can approach the aim, need resampling
+                if self.reverse_move > 2: 
+                    print("Can not approach current position because of 3D collision, activate sampling to find alternative way")
+                    nearby_postition = self.sample_nearby_points(aim_x, aim_y)
+                    self.visualize_sampled_points(nearby_postition)
+                    self.remove_sampled_points()
+                    self.reverse_move %= 2 # reset
+                else:
+                    # turn to right direction
+                    angle_to_aim = np.arctan2(aim_y - current_y, aim_x - current_x)
+                    self.turn_to_angle(angle_to_aim)
+                    
+                    # move after direction is correct
+                    print("Moving towards the aim postion")
+                    base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
         
         print("Arrive at aim position")
+
+    # check if sampled point is available for robot to move
+    def if_valid_sample(self, sample_x, sample_y):
+        
+        allowed_ids = set(self.collision_free_obj_ids).union(self.nav_path_visualize_ids)
+        
+        # check base first
+        base_range_half = max(self.base_height, self.base_width) / 2
+        existing_objects = self.p.getOverlappingObjects(
+            (sample_x-base_range_half, sample_y-base_range_half, self.base_z_range[0]),
+            (sample_x+base_range_half, sample_y+base_range_half, self.base_z_range[1])
+        )
+        existing_objects = {obj[0] for obj in existing_objects}
+        
+        if not existing_objects.issubset(allowed_ids):
+            return False
+
+        print("Available for base to move, checking if fit for robot arm...")
+        # check arm then
+        arm_z_min, arm_z_max = self.arm_z_range
+        arm_length_check_half = max(self.arm_length, self.arm_width) / 2
+        arm_width_check_half = min(self.arm_length, self.arm_width) / 2
+        arm_center = [
+            (sample_x+base_range_half-arm_length_check_half, sample_y),
+            (sample_x-base_range_half+arm_length_check_half, sample_y),
+            (sample_x,sample_y+base_range_half-arm_length_check_half),
+            (sample_x,sample_y-base_range_half+arm_length_check_half)
+        ]
+        for arm_position in arm_center:
+            arm_x, arm_y = arm_position
+            if arm_x == sample_x:
+                existing_objects = self.p.getOverlappingObjects(
+                    (arm_x-arm_width_check_half, arm_y-arm_length_check_half, arm_z_min),
+                    (arm_x+arm_width_check_half, arm_y+arm_length_check_half, arm_z_max)
+                )
+            else:
+                existing_objects = self.p.getOverlappingObjects(
+                    (arm_x-arm_length_check_half, arm_y-arm_width_check_half, arm_z_min),
+                    (arm_x+arm_length_check_half, arm_y+arm_width_check_half, arm_z_max)
+                )
+            if existing_objects is None:
+                return True
+            
+            existing_objects = {obj[0] for obj in existing_objects}
+            if existing_objects.issubset(allowed_ids):
+                return True
+    
+        return False
+
+    # visualize relative robot aabbs for checking
+    def visualize_aabb(self, sample_x, sample_y):
+        # Calculate base AABB
+        base_range_half = max(self.base_height, self.base_width) / 2
+        base_aabb_min = (sample_x - base_range_half, sample_y - base_range_half)
+        
+        arm_length_check_half = max(self.arm_length, self.arm_width) / 2
+        arm_width_check_half = min(self.arm_length, self.arm_width) / 2
+        
+        # Positions for arm extensions (sides of the base)
+        arm_centers = [
+            (sample_x + base_range_half - arm_length_check_half, sample_y),  # Right side
+            (sample_x - base_range_half+ arm_length_check_half, sample_y),  # Left side
+            (sample_x, sample_y + base_range_half - arm_length_check_half),  # Top side
+            (sample_x, sample_y - base_range_half + arm_length_check_half)   # Bottom side
+        ]
+        
+        fig, ax = plt.subplots(figsize=(10, 10))
+
+        # Plot base AABB
+        ax.add_patch(
+            patches.Rectangle(
+                base_aabb_min,
+                base_range_half * 2,
+                base_range_half * 2,
+                linewidth=2,
+                edgecolor='blue',
+                facecolor='none',
+                label='Base AABB'
+            )
+        )
+        
+        # Plot arm AABBs
+        for i, (arm_x, arm_y) in enumerate(arm_centers):
+            if arm_x == sample_x:  # Vertical arms (top and bottom)
+                arm_aabb_min = (arm_x - arm_width_check_half, arm_y - arm_length_check_half)
+                arm_aabb_max = (arm_x + arm_width_check_half, arm_y + arm_length_check_half)
+            else:  # Horizontal arms (left and right)
+                arm_aabb_min = (arm_x - arm_length_check_half, arm_y - arm_width_check_half)
+                arm_aabb_max = (arm_x + arm_length_check_half, arm_y + arm_width_check_half)
+            
+            ax.add_patch(
+                patches.Rectangle(
+                    arm_aabb_min,
+                    arm_aabb_max[0] - arm_aabb_min[0],
+                    arm_aabb_max[1] - arm_aabb_min[1],
+                    linewidth=1.5,
+                    edgecolor='green',
+                    facecolor='none',
+                    label=f'Arm AABB {i+1}' # Only show label once
+                )
+            )
+        
+        # Center the plot around the sample point
+        ax.set_xlim(sample_x - 2 * base_range_half, sample_x + 2 * base_range_half)
+        ax.set_ylim(sample_y - 2 * base_range_half, sample_y + 2 * base_range_half)
+        
+        # Set plot properties
+        ax.set_title('AABB Visualization for Base and Arm')
+        ax.set_xlabel('X-coordinate')
+        ax.set_ylabel('Y-coordinate')
+        ax.grid(True)
+        ax.legend()
+        ax.set_aspect('equal', adjustable='box')
+        
+        # Show the plot
+        plt.show()
+
+    # sample possible points near current aim point as alternative points
+    def sample_nearby_points(self, cur_aim_x, cur_aim_y, max_samples=100, std_dev=1):
+        sampled_points = []
+        sampling_radius = max(self.base_length, self.base_width) * 0.4
+        for _ in range(max_samples):
+            # Generate a random offset within the square area defined by the sampling_radius
+            offset_x = np.random.normal(0, std_dev * sampling_radius)
+            offset_y = np.random.normal(0, std_dev * sampling_radius)
+            
+            # Compute the sampled point's coordinates
+            sample_x = cur_aim_x + offset_x
+            sample_y = cur_aim_y + offset_y
+            if self.if_valid_sample(sample_x, sample_y):
+                sampled_points.append((sample_x, sample_y))
+        return sampled_points
+    
+    # visualize sampled collision free points
+    def visualize_sampled_points(self, sampled_points):
+        for point in sampled_points:
+            x, y = point
+            body_id = self.p.createMultiBody(
+                baseVisualShapeIndex=self.sample_point_id,
+                basePosition=(x, y, 0)  # Adjust z-axis for better visibility
+            )
+            # Store the body ID for potential removal
+            self.sample_points_ids.append(body_id)
+
+    # remove visualization
+    def remove_sampled_points(self, sampled_point_ids=None):
+        if sampled_point_ids is None:
+            sampled_point_ids = self.sample_points_ids
+            
+        for body_id in sampled_point_ids:
+            self.p.removeBody(body_id)
+        
+        if sampled_point_ids is None:
+            self.sample_points_ids.clear()
+            
