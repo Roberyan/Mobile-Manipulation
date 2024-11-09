@@ -16,7 +16,6 @@ class RobotNavigator:
         self.robot = robot
         self.num_links = getNumLinks(self.robot.robotId)
         self.nav_map = nav_map
-        self.astar_path = astar_path
         self.world_path = [self.map_to_world(x, y) for x, y in astar_path]
         self.get_robot_base_arm_metric()
         
@@ -132,7 +131,9 @@ class RobotNavigator:
         return is_collision_free
     
     def move_according_to_path(self):
-        for aim_x, aim_y in self.world_path:
+        while self.world_path:
+            aim_x, aim_y = self.world_path.pop(0)
+
             while True:
                 time.sleep(1./240.)
                 self.p.stepSimulation()
@@ -161,7 +162,9 @@ class RobotNavigator:
                 # Neither moving forward or backward can approach the aim, need resampling
                 if self.reverse_move > 2: 
                     print("Can not approach current position because of 3D collision, activate sampling to find alternative way")
+                    next_x, next_y = self.world_path[0]
                     nearby_postition = self.sample_nearby_points(aim_x, aim_y)
+                    nearby_postition = self.rank_sampled_points(nearby_postition, aim_x, aim_y, next_x, next_y)
                     self.visualize_sampled_points(nearby_postition)
                     self.remove_sampled_points()
                     self.reverse_move %= 2 # reset
@@ -173,9 +176,22 @@ class RobotNavigator:
                     # move after direction is correct
                     print("Moving towards the aim postion")
                     base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
-        
+
+            self.p.removeBody(self.nav_path_visualize_ids.pop(0))
         print("Arrive at aim position")
 
+    def rank_sampled_points(self, sampled_points, current_x, current_y, next_x, next_y):
+        scored_points = []
+        for sample_x, sample_y in sampled_points:
+            distance_to_current = np.hypot(sample_x - current_x, sample_y - current_y)
+            if distance_to_current >= self.base_length:
+                continue
+            distance_to_next = np.hypot(sample_x - next_x, sample_y - next_y)
+            total_score = distance_to_current + distance_to_next
+            scored_points.append((sample_x, sample_y, total_score))
+        scored_points.sort(key=lambda point: point[2])
+        return [(x, y) for x, y, _ in scored_points]
+    
     # check if sampled point is available for robot to move
     def if_valid_sample(self, sample_x, sample_y):
         
