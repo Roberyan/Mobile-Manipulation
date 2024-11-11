@@ -4,11 +4,12 @@ import numpy as np
 from utils.tools import *
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import heapq
 
 class RobotNavigator:
     forward_speed = 0.15
     turn_speed = 0.3
-    reverse_move = 0
+    reverse_move = 0 # odd for reverse move
     base_index = 3
     reverse_index = 6
     
@@ -97,6 +98,15 @@ class RobotNavigator:
     def get_angle_diff(self, target_angle):
         return (target_angle - self.get_current_yaw() + np.pi) % (2 * np.pi) - np.pi
     
+    def escape_collision(self, mode):
+        if mode == "turn":
+            while not self.is_collision_free():
+                base_control(self.robot, self.p, forward=0, turn=self.turn_speed*-1)
+        elif mode == "forward":
+            while not self.is_collision_free():
+                base_control(self.robot, self.p, forward=self.forward_speed*-1, turn=0)
+        base_control(self.robot, self.p, forward=0, turn=0)
+    
     def turn_to_angle(self, target_angle):
         
         if self.reverse_move % 2 != 0:
@@ -104,10 +114,10 @@ class RobotNavigator:
             target_angle += np.pi
 
         initial_angle_diff = self.get_angle_diff(target_angle)
-        turn_direction = np.sign(initial_angle_diff)  # Determine clockwise or counterclockwise direction
+        self.turn_speed = np.sign(initial_angle_diff) * abs(self.turn_speed)
         
         # Estimate the total time needed to turn based on turn speed and angle
-        turn_time_estimate = abs(initial_angle_diff) / self.turn_speed
+        turn_time_estimate = abs(initial_angle_diff) / abs(self.turn_speed)
         start_time = time.time()
         
         tried_alternate_direction = False
@@ -119,19 +129,19 @@ class RobotNavigator:
                 return True
             
             # Break if the estimated time to complete the turn is reached
-            if elapsed_time >= turn_time_estimate:
+            if elapsed_time > turn_time_estimate:
                 base_control(self.robot, self.p, forward=0, turn=0)
                 print("Rotation completed.")
                 return True
             
             if not self.is_collision_free():
                 base_control(self.robot, self.p, forward=0, turn=0)
-                print("Collision detected during rotation, stopping.")
+                self.escape_collision("turn")
 
                 # rotate back
                 start_back = time.time()
                 while time.time()-start_back<elapsed_time:
-                    base_control(self.robot, self.p, forward=0, turn=-turn_direction * self.turn_speed)
+                    base_control(self.robot, self.p, forward=0, turn=-1 * self.turn_speed)
                     time.sleep(1./240.)
                     self.p.stepSimulation()
                 base_control(self.robot, self.p, forward=0, turn=0)
@@ -139,14 +149,10 @@ class RobotNavigator:
                 # try another direction
                 if not tried_alternate_direction:
                     tried_alternate_direction = True
-                    turn_direction *= -1  # Switch direction
                     print("Switching to the opposite rotation direction.") 
+                    self.turn_speed *= -1
                     # Recalculate the time estimate for the opposite direction
                     angle_diff = self.get_angle_diff(target_angle)
-                    if turn_direction < 0 and angle_diff > 0:
-                        angle_diff -= 2 * np.pi
-                    elif turn_direction > 0 and angle_diff < 0:
-                        angle_diff += 2 * np.pi
                     turn_time_estimate = abs(angle_diff) / self.turn_speed
                     start_time = time.time()  # Reset time for the new rotation attempt
                 else:
@@ -154,7 +160,7 @@ class RobotNavigator:
                     return False
 
             # Rotate the robot in the chosen direction
-            base_control(self.robot, self.p, forward=0, turn=turn_direction * self.turn_speed)
+            base_control(self.robot, self.p, forward=0, turn=self.turn_speed)
             time.sleep(1./240.)  # Step the simulation
             self.p.stepSimulation()
             
@@ -183,8 +189,6 @@ class RobotNavigator:
             abs(current_tuple[1]-aim_tuple[1])<=check_range
     
     def move_according_to_path(self):
-        nearby_position = [] # for resampling collision free points
-        
         while self.world_path:
             aim_x, aim_y = self.world_path[0]
             
@@ -196,33 +200,65 @@ class RobotNavigator:
             while True:
                 time.sleep(1. / 240.)
                 self.p.stepSimulation()
+                
+                # debug use
+                if not self.is_collision_free():
+                    base_control(self.robot, self.p, forward=0, turn=0)
+                    self.escape_collision("forward")
+                    current_x, current_y = self.get_current_position_2D()
+                    alternative_pos = self.sample_and_get_nearest(
+                        current_x, current_y,
+                        aim_x, aim_y, 300, 1
+                    )
+                    self.visualize_sampled_points(alternative_pos)
+                    print("-----------------")
+                
                 current_x, current_y = self.get_current_position_2D()
 
                 if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
+                # if self.if_within_range(self.robot.robotId, (aim_x, aim_y)):
                     base_control(self.robot, self.p, forward=0, turn=0)
                     break
                 
                 # Turn toward the target direction
                 angle_to_aim = np.arctan2(aim_y - current_y, aim_x - current_x)
-                turn_success = self.turn_to_angle(angle_to_aim)
-                if turn_success:
-                    print("Moving...")
-                    base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
+                self.turn_to_angle(angle_to_aim)
+                print("Moving...")
+                base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
             
             self.remove_sampled_points(exploring_id)
-            self.reverse_move %= 2  # Reset move direction flag
-            
-            # Clean up excess sampled points
-            while len(self.sample_points_ids) > len(nearby_position):
-                self.remove_sampled_points([self.sample_points_ids.pop(0)])
-            
-            if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
-                nearby_position.clear()
-                self.remove_sampled_points()
+            if self.if_close_enough((current_x, current_y), self.world_path[0]):
+                self.world_path.pop(0)
                 self.p.removeBody(self.nav_path_visualize_ids.pop(0))
         
         print("Goal object should be nearby.")
 
+    def sample_and_get_nearest(self, x, y, x2, y2, num_samples=200, max_keep=5):
+        nearest_heap = []
+        for _ in range(num_samples):
+            # Generate a random angle and distance within the offset range
+            angle = np.random.uniform(0, 2 * np.pi)
+            distance = np.random.uniform(self.accept_range * 2, self.accept_range * 4)
+
+            # Calculate the sampled point's coordinates
+            sample_x = x + distance * np.cos(angle)
+            sample_y = y + distance * np.sin(angle)
+
+            # Validate the sample and calculate its combined distance if valid
+            if self.if_valid_sample(sample_x, sample_y):
+                distance_to_first = (sample_x - x) ** 2 + (sample_y - y) ** 2
+                distance_to_second = (sample_x - x2) ** 2 + (sample_y - y2) ** 2
+                combined_distance = distance_to_first + distance_to_second
+
+                # Use a max heap to keep only the closest `max_keep` points
+                heapq.heappush(nearest_heap, (-combined_distance, (sample_x, sample_y)))
+                if len(nearest_heap) > max_keep:
+                    heapq.heappop(nearest_heap)  # Remove the farthest point
+
+        # Extract points from the heap and return them sorted by proximity
+        sorted_points = [point for _, point in sorted(nearest_heap, key=lambda x: -x[0])]
+        return sorted_points
+    
     # check if sampled point is available for robot to move
     def if_valid_sample(self, sample_x, sample_y):
         
@@ -241,7 +277,6 @@ class RobotNavigator:
 
         print("Available for base to move, checking if fit for robot arm...")
         # check arm then
-        availability = 0
         arm_z_min, arm_z_max = self.arm_z_range
         arm_length_check_half = max(self.arm_length, self.arm_width) / 2
         arm_width_check_half = min(self.arm_length, self.arm_width) / 2
@@ -264,15 +299,11 @@ class RobotNavigator:
                     (arm_x+arm_length_check_half, arm_y+arm_width_check_half, arm_z_max)
                 )
             if existing_objects is None:
-                availability += 1
-                continue
+                return True
             
             existing_objects = {obj[0] for obj in existing_objects}
             if existing_objects.issubset(allowed_ids):
-                availability += 1
-
-        if availability >= 2:
-            return True
+                return True
         return False
 
     # visualize relative robot aabbs for checking
