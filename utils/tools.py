@@ -1,6 +1,61 @@
 import numpy as np
 import pybullet as p
 
+def visualize_aabb_filled(object_id, is_2d=False, color=[0, 0, 1, 0.3]):  # last value in color is transparency
+    visual_shapes = []
+    
+    # Get AABB corners
+    aabb_min, aabb_max = getAABB(object_id)
+    
+    # Compute the center and extent (half-sizes) of the AABB box
+    center = [(aabb_min[i] + aabb_max[i]) / 2 for i in range(3)]
+    extent = [(aabb_max[i] - aabb_min[i]) / 2 for i in range(3)]
+    
+    if is_2d:
+        # For 2D, we assume that the visualization occurs on the X-Y plane
+        # Create a single 2D box to represent the AABB (just a rectangle in the X-Y plane)
+        visual_shape = p.createVisualShape(
+            p.GEOM_BOX, 
+            halfExtents=[extent[0], extent[1], 0.0],  # Thickness of the rectangle is small (0.01)
+            rgbaColor=color
+        )
+        # Position the shape in the center of the AABB
+        visual_shapes.append(p.createMultiBody(baseVisualShapeIndex=visual_shape, basePosition=[center[0], center[1], 0]))
+    
+    else:
+        # For 3D, create faces for each side of the AABB
+        face_boxes = []
+        
+        # X-axis planes
+        face_boxes.append(p.createVisualShape(p.GEOM_BOX, halfExtents=[0.01, extent[1], extent[2]], rgbaColor=color))
+        face_boxes.append(p.createVisualShape(p.GEOM_BOX, halfExtents=[0.01, extent[1], extent[2]], rgbaColor=color))
+        
+        # Y-axis planes
+        face_boxes.append(p.createVisualShape(p.GEOM_BOX, halfExtents=[extent[0], 0.01, extent[2]], rgbaColor=color))
+        face_boxes.append(p.createVisualShape(p.GEOM_BOX, halfExtents=[extent[0], 0.01, extent[2]], rgbaColor=color))
+        
+        # Z-axis planes
+        face_boxes.append(p.createVisualShape(p.GEOM_BOX, halfExtents=[extent[0], extent[1], 0.01], rgbaColor=color))
+        face_boxes.append(p.createVisualShape(p.GEOM_BOX, halfExtents=[extent[0], extent[1], 0.01], rgbaColor=color))
+        
+        # Add each visual shape at the corresponding position
+        visual_shapes.append(p.createMultiBody(baseVisualShapeIndex=face_boxes[0], basePosition=[aabb_min[0], center[1], center[2]]))
+        visual_shapes.append(p.createMultiBody(baseVisualShapeIndex=face_boxes[1], basePosition=[aabb_max[0], center[1], center[2]]))
+        visual_shapes.append(p.createMultiBody(baseVisualShapeIndex=face_boxes[2], basePosition=[center[0], aabb_min[1], center[2]]))
+        visual_shapes.append(p.createMultiBody(baseVisualShapeIndex=face_boxes[3], basePosition=[center[0], aabb_max[1], center[2]]))
+        visual_shapes.append(p.createMultiBody(baseVisualShapeIndex=face_boxes[4], basePosition=[center[0], center[1], aabb_min[2]]))
+        visual_shapes.append(p.createMultiBody(baseVisualShapeIndex=face_boxes[5], basePosition=[center[0], center[1], aabb_max[2]]))
+    
+    return visual_shapes
+    
+def remove_visual_shapes(visual_shapes):
+    """
+    Removes all the visual shapes stored in the visual_shapes list
+    """
+    for visual_id in visual_shapes:
+        p.removeBody(visual_id)  # Remove the body from the simulation
+    visual_shapes.clear()  # Clear the list of visual shapes
+
 def checkObject2DSize(obj_id):
     m, M = getAABB(obj_id)
     return (M-m)[:-1]
