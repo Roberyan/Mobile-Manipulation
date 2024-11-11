@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 class RobotNavigator:
-    forward_speed = 0.2
+    forward_speed = 0.15
     turn_speed = 0.3
     reverse_move = 0
     base_index = 3
@@ -19,7 +19,7 @@ class RobotNavigator:
         self.nav_map = nav_map
         self.world_path = [self.map_to_world(x, y) for x, y in astar_path]
         self.get_robot_base_arm_metric()
-        self.accept_range = self.nav_map.grid_resolution
+        self.accept_range = 0.1
         self.path_point_id = self.p.createVisualShape(
             shapeType=self.p.GEOM_SPHERE,
             radius=self.nav_map.grid_resolution*0.2,
@@ -182,7 +182,7 @@ class RobotNavigator:
         return abs(current_tuple[0]-aim_tuple[0])<= check_range and \
             abs(current_tuple[1]-aim_tuple[1])<=check_range
     
-    def go_back(self, time_span=0.2):
+    def go_back(self, time_span=0.1):
         # Move back to create space
         start_time = time.time()
         base_control(self.robot, self.p, forward=self.forward_speed*-1, turn=0)
@@ -222,6 +222,8 @@ class RobotNavigator:
                     self.reverse_move += 1  # Track direction (even for forward, odd for backward)
                     
                     if reverse_attempts >= MAX_REVERSE_ATTEMPTS:
+                        if len(self.sample_points_ids):
+                            break
                         if sampling_attempts < MAX_SAMPLING_ATTEMPTS:
                             sampling_attempts += 1
                             nearby_position = self.sample_nearby_points(current_x, current_y)
@@ -229,6 +231,7 @@ class RobotNavigator:
                             if len(nearby_position) > 0:
                                 self.visualize_sampled_points(nearby_position)
                                 self.reverse_move %= 2  # Reset direction
+                                break
                             
                         if former_x is not None:
                             print("Return to last successful position")
@@ -275,7 +278,7 @@ class RobotNavigator:
         allowed_ids = set(self.collision_free_obj_ids).union(self.nav_path_visualize_ids)
         
         # check base first
-        base_range_half = max(self.base_height, self.base_width) / 2
+        base_range_half = self.base_width / 2
         existing_objects = self.p.getOverlappingObjects(
             (sample_x-base_range_half, sample_y-base_range_half, self.base_z_range[0]),
             (sample_x+base_range_half, sample_y+base_range_half, self.base_z_range[1])
@@ -317,7 +320,7 @@ class RobotNavigator:
             if existing_objects.issubset(allowed_ids):
                 availability += 1
 
-        if availability >= 3:
+        if availability >= 2:
             return True
         return False
 
@@ -390,10 +393,10 @@ class RobotNavigator:
         plt.show()
 
     # sample possible points near current aim point as alternative points
-    def sample_nearby_points(self, cur_aim_x, cur_aim_y, max_samples=300):
+    def sample_nearby_points(self, cur_aim_x, cur_aim_y, max_samples=500):
         sampled_points = []
         max_offset = self.base_length
-        min_offset = self.arm_length
+        min_offset = self.accept_range
         
         for _ in range(max_samples):
             offset = np.random.uniform(min_offset, max_offset)
@@ -411,7 +414,7 @@ class RobotNavigator:
         scored_points = []
         for sample_x, sample_y in sampled_points:
             distance_to_current = np.hypot(sample_x - current_x, sample_y - current_y)
-            if distance_to_current <= self.arm_length:
+            if distance_to_current <= self.accept_range:
                 continue
             distance_to_next = np.hypot(sample_x - next_x, sample_y - next_y)
             if distance_to_next > self.base_width:
