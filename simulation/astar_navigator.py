@@ -6,10 +6,11 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 class RobotNavigator:
-    forward_speed = 0.1
+    forward_speed = 0.15
     turn_speed = 0.3
     reverse_move = 0
     base_index = 3
+    reverse_index = 6
     
     def __init__(self, p, robot, nav_map, astar_path):
         self.p = p
@@ -18,7 +19,7 @@ class RobotNavigator:
         self.nav_map = nav_map
         self.world_path = [self.map_to_world(x, y) for x, y in astar_path]
         self.get_robot_base_arm_metric()
-        
+        self.accept_range = self.nav_map.grid_resolution
         self.path_point_id = self.p.createVisualShape(
             shapeType=self.p.GEOM_SPHERE,
             radius=self.nav_map.grid_resolution*0.2,
@@ -28,6 +29,11 @@ class RobotNavigator:
             shapeType=self.p.GEOM_SPHERE,
             radius=self.nav_map.grid_resolution*0.2,
             rgbaColor=[0, 1, 0, 1]  # Bright orange color for start points
+        )
+        self.exploring_point_id = self.p.createVisualShape(
+            shapeType=self.p.GEOM_SPHERE,
+            radius=self.nav_map.grid_resolution*0.2,
+            rgbaColor=[1, 1, 0, 1]  # Bright orange color for start points
         )
 
         self.collision_free_obj_ids = [self.nav_map.objects_dict['plane'], self.robot.robotId]
@@ -73,53 +79,81 @@ class RobotNavigator:
             #     )
             #     self.nav_path_visualize_ids.append(l_id)
     
-    def is_within_grid_resolution(self, current_tuple, aim_tuple):
-        return abs(current_tuple[0]-aim_tuple[0])<=self.nav_map.grid_resolution and \
-            abs(current_tuple[1]-aim_tuple[1])<=self.nav_map.grid_resolution
-    
     def get_current_yaw(self):
         orientation = self.p.getLinkState(self.robot.robotId, self.base_index)[1]
         _, _, yaw = self.p.getEulerFromQuaternion(orientation)
         return yaw
     
     def get_current_position_2D(self):
-        position = self.p.getLinkState(self.robot.robotId, self.base_index)[0]
+        position_front = self.p.getLinkState(self.robot.robotId, self.base_index)[0]
+        position_back = self.p.getLinkState(self.robot.robotId, self.reverse_index)[0]
+        position = [(position_front[0]+position_back[0])/2, (position_front[1]+position_back[1])/2]
+        # if self.reverse_move%2 == 0: 
+        #     position = self.p.getLinkState(self.robot.robotId, self.base_index)[0]
+        # else:
+        #     position = self.p.getLinkState(self.robot.robotId, self.reverse_index)[0]
         return position[0], position[1]
     
     def turn_to_angle(self, target_angle):
         original_yaw = self.get_current_yaw()
         
-        if self.reverse_move%2 != 0:
+        if self.reverse_move % 2 != 0:
             print("Rotate direction for reverse moving.")
             target_angle += np.pi
-            
-        if_try_other_direction = False 
-           
-        while True:
-            print("Adjusting to the correct direction.")
-            current_yaw = self.get_current_yaw()
-            # Normalize to [-pi, pi]
-            angle_diff = (target_angle - current_yaw + np.pi) % (2 * np.pi) - np.pi
 
-            if abs(angle_diff) < 0.05:  # Stop turning when close enough to the target angle
+        initial_angle_diff = (target_angle - original_yaw + np.pi) % (2 * np.pi) - np.pi
+        turn_direction = np.sign(initial_angle_diff)  # Determine clockwise or counterclockwise direction
+        
+        # Estimate the total time needed to turn based on turn speed and angle
+        turn_time_estimate = abs(initial_angle_diff) / self.turn_speed
+        start_time = time.time()
+        
+        tried_alternate_direction = False
+        
+        while True:
+            elapsed_time = time.time() - start_time
+            
+            # Break if the estimated time to complete the turn is reached
+            if elapsed_time >= turn_time_estimate:
                 base_control(self.robot, self.p, forward=0, turn=0)
+                print("Rotation completed.")
                 break
             
             if not self.is_collision_free():
-                if if_try_other_direction:
-                    if_try_other_direction = False
-                    target_angle = original_yaw # go to original direction
-                    print("Two directions are all not available, turn to original direction")
-                else:
-                    if_try_other_direction = True
-                    target_angle += 2*np.pi
-                    print("Try other rotation direction")
+                base_control(self.robot, self.p, forward=0, turn=0)
+                print("Collision detected during rotation, stopping.")
 
-            turn_direction = np.sign(angle_diff)  # Determine clockwise or counterclockwise direction
+                # rotate back
+                start_back = time.time()
+                while time.time()-start_back<elapsed_time:
+                    base_control(self.robot, self.p, forward=0, turn=-turn_direction * self.turn_speed)
+                    time.sleep(1./240.)
+                    self.p.stepSimulation()
+                base_control(self.robot, self.p, forward=0, turn=0)
+                
+                # try another direction
+                if not tried_alternate_direction:
+                    tried_alternate_direction = True
+                    turn_direction *= -1  # Switch direction
+                    print("Switching to the opposite rotation direction.") 
+                    # Recalculate the time estimate for the opposite direction
+                    current_yaw = self.get_current_yaw()
+                    angle_diff = (target_angle - current_yaw + np.pi) % (2 * np.pi) - np.pi
+                    if turn_direction < 0 and angle_diff > 0:
+                        angle_diff -= 2 * np.pi
+                    elif turn_direction > 0 and angle_diff < 0:
+                        angle_diff += 2 * np.pi
+                    turn_time_estimate = abs(angle_diff) / self.turn_speed
+                    start_time = time.time()  # Reset time for the new rotation attempt
+                else:
+                    print("Collision detected in both directions. Stopping rotation.")
+                    break   
+
+            # Rotate the robot in the chosen direction
             base_control(self.robot, self.p, forward=0, turn=turn_direction * self.turn_speed)
             time.sleep(1./240.)  # Step the simulation
             self.p.stepSimulation()
-    
+            
     def is_collision_free(self):
         is_collision_free = True
         for link_index in range(-1, self.num_links):  # -1 includes the base
@@ -130,68 +164,23 @@ class RobotNavigator:
                 break
         return is_collision_free
     
-    def move_according_to_path(self):
-        while self.world_path:
-            aim_x, aim_y = self.world_path.pop(0)
-
-            while True:
-                time.sleep(1./240.)
-                self.p.stepSimulation()
-                
-                if not self.is_collision_free():
-                    base_control(self.robot, self.p, forward=0, turn=0)
-                    self.reverse_move += 1
-                    self.forward_speed*=-1
-                    
-                    # move back for some free space to adjust
-                    reverse_duration = 1
-                    start_time = time.time()
-                    while time.time() - start_time < reverse_duration:
-                        base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
-                        time.sleep(1./240.)
-                        self.p.stepSimulation()
-                    
-                    # Stop the robot after moving backward
-                    base_control(self.robot, self.p, forward=0, turn=0)
-                    
-                current_x, current_y = self.get_current_position_2D()
-                if self.is_within_grid_resolution((current_x, current_y), (aim_x, aim_y)):
-                    base_control(self.robot, self.p, forward=0, turn=0)
-                    break
-                
-                # Neither moving forward or backward can approach the aim, need resampling
-                if self.reverse_move > 2: 
-                    print("Can not approach current position because of 3D collision, activate sampling to find alternative way")
-                    next_x, next_y = self.world_path[0]
-                    nearby_postition = self.sample_nearby_points(aim_x, aim_y)
-                    nearby_postition = self.rank_sampled_points(nearby_postition, aim_x, aim_y, next_x, next_y)
-                    self.visualize_sampled_points(nearby_postition)
-                    self.remove_sampled_points()
-                    self.reverse_move %= 2 # reset
-                else:
-                    # turn to right direction
-                    angle_to_aim = np.arctan2(aim_y - current_y, aim_x - current_x)
-                    self.turn_to_angle(angle_to_aim)
-                    
-                    # move after direction is correct
-                    print("Moving towards the aim postion")
-                    base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
-
-            self.p.removeBody(self.nav_path_visualize_ids.pop(0))
-        print("Arrive at aim position")
-
-    def rank_sampled_points(self, sampled_points, current_x, current_y, next_x, next_y):
-        scored_points = []
-        for sample_x, sample_y in sampled_points:
-            distance_to_current = np.hypot(sample_x - current_x, sample_y - current_y)
-            if distance_to_current >= self.base_length:
-                continue
-            distance_to_next = np.hypot(sample_x - next_x, sample_y - next_y)
-            total_score = distance_to_current + distance_to_next
-            scored_points.append((sample_x, sample_y, total_score))
-        scored_points.sort(key=lambda point: point[2])
-        return [(x, y) for x, y, _ in scored_points]
+    # check if point is within obj aabb
+    def if_within_range(self, obj_id, aim_tuple):
+        aabb = getAABB(obj_id)
+        min_x, min_y, _ = aabb[0]
+        max_x, max_y, _ = aabb[1]
+        
+        return min_x <= aim_tuple[0] <= max_x and min_y<=aim_tuple[1] <= max_y
     
+    # check if two points are within accept range
+    def if_close_enough(self, current_tuple, aim_tuple, special_range=None):
+        check_range = special_range if special_range is not None else self.accept_range
+        return abs(current_tuple[0]-aim_tuple[0])<= check_range and \
+            abs(current_tuple[1]-aim_tuple[1])<=check_range
+    
+    def move_according_to_path(self):
+        pass
+
     # check if sampled point is available for robot to move
     def if_valid_sample(self, sample_x, sample_y):
         
@@ -309,40 +298,67 @@ class RobotNavigator:
         plt.show()
 
     # sample possible points near current aim point as alternative points
-    def sample_nearby_points(self, cur_aim_x, cur_aim_y, max_samples=100, std_dev=1):
+    def sample_nearby_points(self, cur_aim_x, cur_aim_y, max_samples=300):
         sampled_points = []
-        sampling_radius = max(self.base_length, self.base_width) * 0.4
+        max_offset = self.base_length
+        min_offset = self.arm_length
+        
         for _ in range(max_samples):
-            # Generate a random offset within the square area defined by the sampling_radius
-            offset_x = np.random.normal(0, std_dev * sampling_radius)
-            offset_y = np.random.normal(0, std_dev * sampling_radius)
+            offset = np.random.uniform(min_offset, max_offset)
             
             # Compute the sampled point's coordinates
-            sample_x = cur_aim_x + offset_x
-            sample_y = cur_aim_y + offset_y
-            if self.if_valid_sample(sample_x, sample_y):
-                sampled_points.append((sample_x, sample_y))
+            for x in [-1, 1]:
+                for y in [-1, 1]:
+                    sample_x = cur_aim_x + x*offset
+                    sample_y = cur_aim_y + y*offset
+                if self.if_valid_sample(sample_x, sample_y):
+                    sampled_points.append((sample_x, sample_y))
         return sampled_points
     
+    def rank_sampled_points(self, sampled_points, current_x, current_y, next_x, next_y):
+        scored_points = []
+        for sample_x, sample_y in sampled_points:
+            distance_to_current = np.hypot(sample_x - current_x, sample_y - current_y)
+            if distance_to_current <= self.arm_length:
+                continue
+            distance_to_next = np.hypot(sample_x - next_x, sample_y - next_y)
+            if distance_to_next > self.base_width:
+                continue
+            total_score = distance_to_current*0.5 + distance_to_next*0.5
+            scored_points.append((sample_x, sample_y, total_score))
+        scored_points.sort(key=lambda point: point[2])
+        return [(x, y) for x, y, _ in scored_points]
+
     # visualize sampled collision free points
     def visualize_sampled_points(self, sampled_points):
-        for point in sampled_points:
-            x, y = point
+        if isinstance(sampled_points, list):
+            for point in sampled_points:
+                x, y = point
+                body_id = self.p.createMultiBody(
+                    baseVisualShapeIndex=self.sample_point_id,
+                    basePosition=(x, y, 0)  # Adjust z-axis for better visibility
+                )
+                # Store the body ID for potential removal
+                self.sample_points_ids.append(body_id)
+        elif isinstance(sampled_points, tuple):
+            x, y = sampled_points
             body_id = self.p.createMultiBody(
-                baseVisualShapeIndex=self.sample_point_id,
+                baseVisualShapeIndex=self.exploring_point_id,
                 basePosition=(x, y, 0)  # Adjust z-axis for better visibility
             )
-            # Store the body ID for potential removal
-            self.sample_points_ids.append(body_id)
+            return body_id
 
     # remove visualization
     def remove_sampled_points(self, sampled_point_ids=None):
         if sampled_point_ids is None:
             sampled_point_ids = self.sample_points_ids
-            
-        for body_id in sampled_point_ids:
-            self.p.removeBody(body_id)
         
+        if isinstance(sampled_point_ids, list):
+            for body_id in sampled_point_ids:
+                self.p.removeBody(body_id)
+        elif isinstance(sampled_point_ids, int):
+            self.p.removeBody(sampled_point_ids)
+            
         if sampled_point_ids is None:
             self.sample_points_ids.clear()
             
