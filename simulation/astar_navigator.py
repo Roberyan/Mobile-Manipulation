@@ -51,6 +51,9 @@ class RobotNavigator:
     def map_to_world(self, map_x, map_y):
         world_x = self.nav_map.x_min + map_x * self.nav_map.grid_resolution
         world_y = self.nav_map.y_min + map_y * self.nav_map.grid_resolution
+        
+        if self.if_within_range(self.nav_map.objects_dict["cabinet"], (world_x, world_y)):
+            world_x += 0.2
         return world_x, world_y
     
     def show_path_in_world(self):
@@ -175,8 +178,8 @@ class RobotNavigator:
         return is_collision_free
     
     # check if point is within obj aabb
-    def if_within_range(self, obj_id, aim_tuple):
-        aabb = getAABB(obj_id)
+    def if_within_range(self, obj_id, aim_tuple, zoom=1):
+        aabb = getAABB(obj_id) * zoom
         min_x, min_y, _ = aabb[0]
         max_x, max_y, _ = aabb[1]
         
@@ -188,6 +191,7 @@ class RobotNavigator:
         return abs(current_tuple[0]-aim_tuple[0])<= check_range and \
             abs(current_tuple[1]-aim_tuple[1])<=check_range
     
+    # forward or reverse move
     def change_mode(self):
         assert (self.forward_speed>0 and self.reverse_move%2 == 0) or \
             (self.forward_speed<0 and self.reverse_move%2 == 1), "Error speed direction and moving mode"
@@ -199,10 +203,8 @@ class RobotNavigator:
         while self.world_path:
             aim_x, aim_y = self.world_path[0]
             
-            # TODO: check if aim_x and aim_y is suitable
-                   
             exploring_id = self.visualize_sampled_points((aim_x, aim_y))
-            
+            try_reverse = False
             # real action part
             while True:
                 time.sleep(1. / 240.)
@@ -212,12 +214,18 @@ class RobotNavigator:
                 if not self.is_collision_free():
                     base_control(self.robot, self.p, forward=0, turn=0)
                     self.escape_collision("forward")
-                    current_x, current_y = self.get_current_position_2D()
+                    
+                    if not try_reverse:
+                        try_reverse = True
+                        self.change_mode()
+                        
                     alternative_pos = self.sample_and_get_nearest(
-                        current_x, current_y,
-                        aim_x, aim_y, 300, 1
+                        self.get_current_position_2D(),
+                        self.world_path[0], 
+                        300, 1
                     )
-                    self.visualize_sampled_points(alternative_pos)
+                    # self.visualize_sampled_points(alternative_pos)
+                    aim_x, aim_y = alternative_pos[0]
                     print("-----------------")
                 
                 current_x, current_y = self.get_current_position_2D()
@@ -240,12 +248,20 @@ class RobotNavigator:
         
         print("Goal object should be nearby.")
 
-    def sample_and_get_nearest(self, x, y, x2, y2, num_samples=200, max_keep=5):
+    def sample_and_get_nearest(self, tup_1, tup_2, num_samples=200, max_keep=5, avoid_obj=None):
+        x,y = tup_1
+        x2, y2 = tup_2
         nearest_heap = []
+        
+        if avoid_obj is not None:
+            aabb_min, aabb_max = self.p.getAABB(avoid_obj)
+            aabb_x_min, aabb_y_min, _ = aabb_min
+            aabb_x_max, aabb_y_max, _ = aabb_max
+        
         for _ in range(num_samples):
             # Generate a random angle and distance within the offset range
             angle = np.random.uniform(0, 2 * np.pi)
-            distance = np.random.uniform(self.accept_range * 2, self.accept_range * 4)
+            distance = np.random.uniform(self.accept_range * 2, self.accept_range * 3.5)
 
             # Calculate the sampled point's coordinates
             sample_x = x + distance * np.cos(angle)
@@ -257,6 +273,13 @@ class RobotNavigator:
                 distance_to_second = (sample_x - x2) ** 2 + (sample_y - y2) ** 2
                 combined_distance = distance_to_first + distance_to_second
 
+                if avoid_obj is not None:
+                    closest_x = min(max(sample_x, aabb_x_min), aabb_x_max)
+                    closest_y = min(max(sample_y, aabb_y_min), aabb_y_max)
+                    aabb_distance = (sample_x - closest_x) ** 2 + (sample_y - closest_y) ** 2
+                    # Adjust combined distance to prioritize points farther from the avoid_obj
+                    combined_distance -= aabb_distance  # Subtracting makes points farther from obj more desirable
+                
                 # Use a max heap to keep only the closest `max_keep` points
                 heapq.heappush(nearest_heap, (-combined_distance, (sample_x, sample_y)))
                 if len(nearest_heap) > max_keep:
