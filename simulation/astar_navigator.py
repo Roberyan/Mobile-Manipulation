@@ -182,30 +182,14 @@ class RobotNavigator:
         return abs(current_tuple[0]-aim_tuple[0])<= check_range and \
             abs(current_tuple[1]-aim_tuple[1])<=check_range
     
-    def go_back(self, time_span=0.1):
-        # Move back to create space
-        start_time = time.time()
-        base_control(self.robot, self.p, forward=self.forward_speed*-1, turn=0)
-        time.sleep(0.02)
-        while time.time() - start_time < time_span:
-            self.p.stepSimulation()
-            if not self.is_collision_free():
-                break
-        base_control(self.robot, self.p, forward=0, turn=0)
-    
     def move_according_to_path(self):
         nearby_position = [] # for resampling collision free points
-        former_x, former_y = None, None
-        MAX_REVERSE_ATTEMPTS = 3
-        MAX_SAMPLING_ATTEMPTS = 5
-        reverse_attempts = 0
-        sampling_attempts = 0
         
         while self.world_path:
             aim_x, aim_y = self.world_path[0]
-            if len(nearby_position) > 0:
-                aim_x, aim_y = nearby_position.pop(0)
             
+            # TODO: check if aim_x and aim_y is suitable
+                   
             exploring_id = self.visualize_sampled_points((aim_x, aim_y))
             
             # real action part
@@ -213,38 +197,9 @@ class RobotNavigator:
                 time.sleep(1. / 240.)
                 self.p.stepSimulation()
                 current_x, current_y = self.get_current_position_2D()
-                
-                if not self.is_collision_free():
-                    base_control(self.robot, self.p, forward=0, turn=0)
-                    self.go_back()
-                    self.forward_speed *= -1                    
-                    reverse_attempts += 1
-                    self.reverse_move += 1  # Track direction (even for forward, odd for backward)
-                    
-                    if reverse_attempts >= MAX_REVERSE_ATTEMPTS:
-                        if len(self.sample_points_ids):
-                            break
-                        if sampling_attempts < MAX_SAMPLING_ATTEMPTS:
-                            sampling_attempts += 1
-                            nearby_position = self.sample_nearby_points(current_x, current_y)
-                            nearby_position = self.rank_sampled_points(nearby_position, current_x, current_y, aim_x, aim_y)
-                            if len(nearby_position) > 0:
-                                self.visualize_sampled_points(nearby_position)
-                                self.reverse_move %= 2  # Reset direction
-                                break
-                            
-                        if former_x is not None:
-                            print("Return to last successful position")
-                            
-                        reverse_attempts = 0
-                        aim_x, aim_y = former_x, former_y
-                        self.remove_sampled_points(exploring_id)
-                        exploring_id = self.visualize_sampled_points((aim_x, aim_y))
-                        continue
 
                 if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
                     base_control(self.robot, self.p, forward=0, turn=0)
-                    reverse_attempts = 0  # Reset attempts after success
                     break
                 
                 # Turn toward the target direction
@@ -253,8 +208,6 @@ class RobotNavigator:
                 if turn_success:
                     print("Moving...")
                     base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
-                else:
-                    self.go_back()
             
             self.remove_sampled_points(exploring_id)
             self.reverse_move %= 2  # Reset move direction flag
@@ -265,12 +218,10 @@ class RobotNavigator:
             
             if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
                 nearby_position.clear()
-                sampling_attempts = 0
                 self.remove_sampled_points()
-                former_x, former_y = self.world_path.pop(0)
                 self.p.removeBody(self.nav_path_visualize_ids.pop(0))
         
-        print("Arrived at aim position")
+        print("Goal object should be nearby.")
 
     # check if sampled point is available for robot to move
     def if_valid_sample(self, sample_x, sample_y):
@@ -391,38 +342,6 @@ class RobotNavigator:
         
         # Show the plot
         plt.show()
-
-    # sample possible points near current aim point as alternative points
-    def sample_nearby_points(self, cur_aim_x, cur_aim_y, max_samples=500):
-        sampled_points = []
-        max_offset = self.base_length
-        min_offset = self.accept_range
-        
-        for _ in range(max_samples):
-            offset = np.random.uniform(min_offset, max_offset)
-            
-            # Compute the sampled point's coordinates
-            for x in [-1, 1]:
-                for y in [-1, 1]:
-                    sample_x = cur_aim_x + x*offset
-                    sample_y = cur_aim_y + y*offset
-                if self.if_valid_sample(sample_x, sample_y):
-                    sampled_points.append((sample_x, sample_y))
-        return sampled_points
-    
-    def rank_sampled_points(self, sampled_points, current_x, current_y, next_x, next_y):
-        scored_points = []
-        for sample_x, sample_y in sampled_points:
-            distance_to_current = np.hypot(sample_x - current_x, sample_y - current_y)
-            if distance_to_current <= self.accept_range:
-                continue
-            distance_to_next = np.hypot(sample_x - next_x, sample_y - next_y)
-            if distance_to_next > self.base_width:
-                continue
-            total_score = distance_to_current*0.5 + distance_to_next*0.5
-            scored_points.append((sample_x, sample_y, total_score))
-        scored_points.sort(key=lambda point: point[2])
-        return [(x, y) for x, y, _ in scored_points]
 
     # visualize sampled collision free points
     def visualize_sampled_points(self, sampled_points):
