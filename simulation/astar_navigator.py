@@ -188,6 +188,13 @@ class RobotNavigator:
         return abs(current_tuple[0]-aim_tuple[0])<= check_range and \
             abs(current_tuple[1]-aim_tuple[1])<=check_range
     
+    def change_mode(self):
+        assert (self.forward_speed>0 and self.reverse_move%2 == 0) or \
+            (self.forward_speed<0 and self.reverse_move%2 == 1), "Error speed direction and moving mode"
+        
+        self.forward_speed *= -1 
+        self.reverse_move += 1
+        
     def move_according_to_path(self):
         while self.world_path:
             aim_x, aim_y = self.world_path[0]
