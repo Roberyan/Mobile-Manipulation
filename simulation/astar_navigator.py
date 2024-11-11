@@ -48,12 +48,13 @@ class RobotNavigator:
         self.base_z_range = (base_aabb[0][-1], base_aabb[1][-1])
         self.arm_z_range = (arm_aabb[0][-1], arm_aabb[1][-1])
     
-    def map_to_world(self, map_x, map_y):
+    def map_to_world(self, map_x, map_y, use_wit=True):
         world_x = self.nav_map.x_min + map_x * self.nav_map.grid_resolution
         world_y = self.nav_map.y_min + map_y * self.nav_map.grid_resolution
         
-        if self.if_within_range(self.nav_map.objects_dict["cabinet"], (world_x, world_y)):
-            world_x += 0.2
+        if use_wit:
+            if self.if_within_range(self.nav_map.objects_dict["cabinet"], (world_x, world_y), 1.7):
+                world_x += 0.26
         return world_x, world_y
     
     def show_path_in_world(self):
@@ -137,36 +138,36 @@ class RobotNavigator:
                 print("Rotation completed.")
                 return True
             
-            if not self.is_collision_free():
-                base_control(self.robot, self.p, forward=0, turn=0)
-                self.escape_collision("turn")
+            # if not self.is_collision_free():
+            #     base_control(self.robot, self.p, forward=0, turn=0)
+            #     self.escape_collision("turn")
 
-                # rotate back
-                start_back = time.time()
-                while time.time()-start_back<elapsed_time:
-                    base_control(self.robot, self.p, forward=0, turn=-1 * self.turn_speed)
-                    time.sleep(1./240.)
-                    self.p.stepSimulation()
-                base_control(self.robot, self.p, forward=0, turn=0)
+            #     # rotate back
+            #     start_back = time.time()
+            #     while time.time()-start_back<elapsed_time:
+            #         base_control(self.robot, self.p, forward=0, turn=-1 * self.turn_speed)
+            #         time.sleep(1./240.)
+            #         self.p.stepSimulation()
+            #     base_control(self.robot, self.p, forward=0, turn=0)
                 
-                # try another direction
-                if not tried_alternate_direction:
-                    tried_alternate_direction = True
-                    print("Switching to the opposite rotation direction.") 
-                    self.turn_speed *= -1
-                    # Recalculate the time estimate for the opposite direction
-                    angle_diff = self.get_angle_diff(target_angle)
-                    turn_time_estimate = abs(angle_diff) / self.turn_speed
-                    start_time = time.time()  # Reset time for the new rotation attempt
-                else:
-                    print("Collision detected in both directions. Stopping rotation.")
-                    return False
+            #     # try another direction
+            #     if not tried_alternate_direction:
+            #         tried_alternate_direction = True
+            #         print("Switching to the opposite rotation direction.") 
+            #         self.turn_speed *= -1
+            #         # Recalculate the time estimate for the opposite direction
+            #         angle_diff = self.get_angle_diff(target_angle)
+            #         turn_time_estimate = abs(angle_diff) / self.turn_speed
+            #         start_time = time.time()  # Reset time for the new rotation attempt
+            #     else:
+            #         print("Collision detected in both directions. Stopping rotation.")
+            #         return False
 
             # Rotate the robot in the chosen direction
             base_control(self.robot, self.p, forward=0, turn=self.turn_speed)
             time.sleep(1./240.)  # Step the simulation
             self.p.stepSimulation()
-            
+    
     def is_collision_free(self):
         is_collision_free = True
         for link_index in range(-1, self.num_links):  # -1 includes the base
@@ -179,11 +180,17 @@ class RobotNavigator:
     
     # check if point is within obj aabb
     def if_within_range(self, obj_id, aim_tuple, zoom=1):
-        aabb = getAABB(obj_id) * zoom
-        min_x, min_y, _ = aabb[0]
-        max_x, max_y, _ = aabb[1]
+        aabb_min, aabb_max = getAABB(obj_id)
+    
+        extent_x = (aabb_max[0] - aabb_min[0]) * zoom
+        extent_y = (aabb_max[1] - aabb_min[1]) * zoom
+
+        min_x = aabb_min[0] - (extent_x - (aabb_max[0] - aabb_min[0])) / 2
+        max_x = aabb_max[0] + (extent_x - (aabb_max[0] - aabb_min[0])) / 2
+        min_y = aabb_min[1] - (extent_y - (aabb_max[1] - aabb_min[1])) / 2
+        max_y = aabb_max[1] + (extent_y - (aabb_max[1] - aabb_min[1])) / 2
         
-        return min_x <= aim_tuple[0] <= max_x and min_y<=aim_tuple[1] <= max_y
+        return min_x <= aim_tuple[0] <= max_x and min_y <= aim_tuple[1] <= max_y
     
     # check if two points are within accept range
     def if_close_enough(self, current_tuple, aim_tuple, special_range=None):
