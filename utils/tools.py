@@ -1,11 +1,11 @@
 import numpy as np
 import pybullet as p
 
-def visualize_aabb_filled(object_id, is_2d=False, color=[0, 0, 1, 0.3]):  # last value in color is transparency
+def visualize_aabb_filled(object_aabb, is_2d=False, color=[0, 0, 1, 0.3]):  # last value in color is transparency
     visual_shapes = []
     
     # Get AABB corners
-    aabb_min, aabb_max = getAABB(object_id)
+    aabb_min, aabb_max = object_aabb
     
     # Compute the center and extent (half-sizes) of the AABB box
     center = [(aabb_min[i] + aabb_max[i]) / 2 for i in range(3)]
