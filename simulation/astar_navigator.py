@@ -126,36 +126,6 @@ class RobotNavigator:
        
         base_control(self.robot, self.p, forward=0, turn=0)
     
-    def turn_to_angle(self, target_angle, strict=False):
-        
-        if self.reverse_move % 2 != 0:
-            print("Rotate direction for reverse moving.")
-            target_angle += np.pi
-
-        initial_angle_diff = self.get_angle_diff(target_angle)
-        self.turn_speed = np.sign(initial_angle_diff) * abs(self.turn_speed)
-        
-        # Estimate the total time needed to turn based on turn speed and angle
-        turn_time_estimate = abs(initial_angle_diff) / abs(self.turn_speed)
-        start_time = time.time()
-
-        while True:
-            elapsed_time = time.time() - start_time
-            
-            if abs(self.get_angle_diff(target_angle)) <= 0.05:
-                return True
-            
-            # Break if the estimated time to complete the turn is reached
-            if elapsed_time > turn_time_estimate:
-                base_control(self.robot, self.p, forward=0, turn=0)
-                print("Rotation completed.")
-                return True
-            
-            # Rotate the robot in the chosen direction
-            base_control(self.robot, self.p, forward=0, turn=self.turn_speed)
-            time.sleep(1./240.)  # Step the simulation
-            self.p.stepSimulation()
-    
     def get_base_aabb(self):
         base_x, base_y = self.get_current_base_position_2D()
         half_base_extent = self.base_width / 2
@@ -241,29 +211,84 @@ class RobotNavigator:
                 self.change_mode()
             return aim_tuple
     
+    def turn_time_estimate(self, aim_x, aim_y):
+        if self.reverse_move % 2 != 0:
+            print("Rotate direction for reverse moving.")
+            reverse_offset = np.pi
+        else:
+            reverse_offset = 0
+        current_x, current_y = self.get_current_base_position_2D()
+        initial_angle_to_aim = np.arctan2(aim_y - current_y, aim_x - current_x) + reverse_offset
+        initial_angle_diff = self.get_angle_diff(initial_angle_to_aim)
+        self.turn_speed = np.sign(initial_angle_diff) * abs(self.turn_speed)
+        
+        # Set maximum rotation time based on initial angle difference and turn speed
+        turn_time_estimate = abs(initial_angle_diff) / abs(self.turn_speed)
+        return turn_time_estimate
+    
+    def turn_to_position(self, aim_x, aim_y):
+        # Check if reverse move is active
+        if self.reverse_move % 2 != 0:
+            print("Rotate direction for reverse moving.")
+            reverse_offset = np.pi
+        else:
+            reverse_offset = 0
+        
+        
+        # Set maximum rotation time based on initial angle difference and turn speed
+        turn_time_estimate = self.turn_time_estimate(aim_x, aim_y)
+        start_time = time.time()
+        
+        while True:
+            # Get current position and calculate real-time angle to aim
+            current_x, current_y = self.get_current_base_position_2D()
+            angle_to_aim = np.arctan2(aim_y - current_y, aim_x - current_x) + reverse_offset
+            current_angle_diff = self.get_angle_diff(angle_to_aim)
+
+            # Adjust speed for smoother turning as we get closer to the target angle
+            if abs(current_angle_diff) < 0.2:
+                smooth_turn_speed = self.turn_speed * 0.5
+            elif abs(current_angle_diff) < 0.1:
+                smooth_turn_speed = self.turn_speed * 0.2
+            else:
+                smooth_turn_speed = self.turn_speed
+
+            # Stop rotating if within tolerance of target angle
+            if abs(current_angle_diff) <= 0.05:
+                base_control(self.robot, self.p, forward=0, turn=0)
+                print("Aligned with target direction.")
+                return True
+
+            # Check if rotation time is too long, preventing redundancy
+            if time.time() - start_time > turn_time_estimate:
+                base_control(self.robot, self.p, forward=0, turn=0)
+                print("Rotation completed due to time limit.")
+                return False
+
+            # Rotate the robot at the adjusted speed
+            base_control(self.robot, self.p, forward=0, turn=smooth_turn_speed)
+            time.sleep(1./240.)  # Step the simulation
+            self.p.stepSimulation()
+    
     # follow planned path
     def move_according_to_path(self):
         while self.world_path:
-            aim_x, aim_y = self.world_path[0]
-            
+            aim_x, aim_y = self.mode_decide(self.world_path[0])
             self.exploring_id = self.visualize_sampled_points((aim_x, aim_y))
-            aim_x, aim_y = self.mode_decide((aim_x, aim_y))
 
             # real action part
             while True:
                 time.sleep(1. / 240.)
                 self.p.stepSimulation()
                 
-                current_x, current_y = self.get_current_base_position_2D()
-
+                # Turn toward the target direction
+                self.turn_to_position(aim_x, aim_y)
+                
                 # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
                 if self.if_within_range(self.robot.robotId, (aim_x, aim_y), 0.9):
                     base_control(self.robot, self.p, forward=0, turn=0)
                     break
                 
-                # Turn toward the target direction
-                angle_to_aim = np.arctan2(aim_y - current_y, aim_x - current_x)
-                self.turn_to_angle(angle_to_aim)
                 print("Moving...")
                 base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
             
