@@ -52,13 +52,10 @@ class RobotNavigator:
         self.base_z_range = (base_aabb[0][-1], base_aabb[1][-1])
         self.arm_z_range = (arm_aabb[0][-1], arm_aabb[1][-1])
     
-    def map_to_world(self, map_x, map_y, use_wit=True):
+    def map_to_world(self, map_x, map_y):
         world_x = self.nav_map.x_min + map_x * self.nav_map.grid_resolution
         world_y = self.nav_map.y_min + map_y * self.nav_map.grid_resolution
         
-        if use_wit:
-            if self.if_within_range(self.nav_map.objects_dict["cabinet"], (world_x, world_y), 1.7):
-                world_x += 0.26
         return world_x, world_y
     
     def show_path_in_world(self):
@@ -141,9 +138,7 @@ class RobotNavigator:
         # Estimate the total time needed to turn based on turn speed and angle
         turn_time_estimate = abs(initial_angle_diff) / abs(self.turn_speed)
         start_time = time.time()
-        
-        tried_alternate_direction = False
-        
+
         while True:
             elapsed_time = time.time() - start_time
             
@@ -156,51 +151,30 @@ class RobotNavigator:
                 print("Rotation completed.")
                 return True
             
-            if strict:
-                if not self.is_collision_free():
-                    base_control(self.robot, self.p, forward=0, turn=0)
-                    self.escape_collision("turn")
-
-                    # rotate back
-                    start_back = time.time()
-                    while time.time()-start_back<elapsed_time:
-                        base_control(self.robot, self.p, forward=0, turn=-1 * self.turn_speed)
-                        time.sleep(1./240.)
-                        self.p.stepSimulation()
-                    base_control(self.robot, self.p, forward=0, turn=0)
-                    
-                    # try another direction
-                    if not tried_alternate_direction:
-                        tried_alternate_direction = True
-                        print("Switching to the opposite rotation direction.") 
-                        self.turn_speed *= -1
-                        # Recalculate the time estimate for the opposite direction
-                        angle_diff = self.get_angle_diff(target_angle)
-                        turn_time_estimate = abs(angle_diff) / self.turn_speed
-                        start_time = time.time()  # Reset time for the new rotation attempt
-                    else:
-                        print("Collision detected in both directions. Stopping rotation.")
-                        return False
-
             # Rotate the robot in the chosen direction
             base_control(self.robot, self.p, forward=0, turn=self.turn_speed)
             time.sleep(1./240.)  # Step the simulation
             self.p.stepSimulation()
     
-    def is_collision_free(self):
-        allowed_ids = set(self.collision_free_obj_ids).union(self.nav_path_visualize_ids)
-        allowed_ids.add(self.exploring_id)
-        # base range
+    def get_base_aabb(self):
         base_x, base_y = self.get_current_base_position_2D()
         half_base_extent = self.base_width / 2
         base_min = (base_x - half_base_extent, base_y - half_base_extent, self.base_z_range[0])
         base_max = (base_x + half_base_extent, base_y + half_base_extent, self.base_z_range[1])
-        
-        # arm range
+        return base_min, base_max
+
+    def get_arm_aabb(self):
         arm_x, arm_y = self.get_current_arm_position_2D()
         arm_half_extent = self.arm_length / 2  # Assuming the arm is square in cross-section
         arm_min = (arm_x - arm_half_extent, arm_y - arm_half_extent, self.arm_z_range[0])
         arm_max = (arm_x + arm_half_extent, arm_y + arm_half_extent, self.arm_z_range[1])
+        return arm_min, arm_max
+    
+    def is_collision_free(self):
+        allowed_ids = set(self.collision_free_obj_ids).union(self.nav_path_visualize_ids)
+        allowed_ids.add(self.exploring_id)
+        # base range
+        base_min, base_max = self.get_base_aabb()
         
         #check base
         base_overlapping_objects = self.p.getOverlappingObjects(base_min, base_max)
@@ -209,6 +183,9 @@ class RobotNavigator:
             if not base_ids.issubset(allowed_ids):
                 print("base problem", base_ids)
                 return False  # Collision detected in the base area
+        
+        # arm range
+        arm_min, arm_max = self.get_arm_aabb()
         
         # check arm
         arm_overlapping_objects = self.p.getOverlappingObjects(arm_min, arm_max)
@@ -222,8 +199,12 @@ class RobotNavigator:
     
     # check if point is within obj aabb
     def if_within_range(self, obj_id, aim_tuple, zoom=1):
-        aabb_min, aabb_max = getAABB(obj_id)
-    
+        # special treat for robot base aabb measurement
+        if obj_id == self.robot.robotId:
+            aabb_min, aabb_max = self.get_base_aabb()
+        else:
+            aabb_min, aabb_max = getAABB(obj_id)
+        
         extent_x = (aabb_max[0] - aabb_min[0]) * zoom
         extent_y = (aabb_max[1] - aabb_min[1]) * zoom
 
@@ -254,10 +235,11 @@ class RobotNavigator:
         if self.if_within_range(self.nav_map.objects_dict["cabinet"], aim_tuple, 1.7):
             if self.forward_speed > 0:
                 self.change_mode()
+            return aim_tuple[0]+0.26, aim_tuple[1]
         else:
             if self.forward_speed < 0:
                 self.change_mode()
-        
+            return aim_tuple
     
     # follow planned path
     def move_according_to_path(self):
@@ -265,31 +247,17 @@ class RobotNavigator:
             aim_x, aim_y = self.world_path[0]
             
             self.exploring_id = self.visualize_sampled_points((aim_x, aim_y))
-            self.mode_decide((aim_x, aim_y))
+            aim_x, aim_y = self.mode_decide((aim_x, aim_y))
 
             # real action part
             while True:
                 time.sleep(1. / 240.)
                 self.p.stepSimulation()
                 
-                # debug use
-                # if not self.is_collision_free():
-                #     base_control(self.robot, self.p, forward=0, turn=0)
-                #     self.escape_collision("forward")
-                        
-                #     # alternative_pos = self.sample_and_get_nearest(
-                #     #     self.get_current_base_position_2D(),
-                #     #     self.world_path[0], 
-                #     #     300, 1
-                #     # )
-                #     # # self.visualize_sampled_points(alternative_pos)
-                #     # aim_x, aim_y = alternative_pos[0]
-                #     print("-----------------")
-                
                 current_x, current_y = self.get_current_base_position_2D()
 
-                if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
-                # if self.if_within_range(self.robot.robotId, (aim_x, aim_y)):
+                # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
+                if self.if_within_range(self.robot.robotId, (aim_x, aim_y), 0.9):
                     base_control(self.robot, self.p, forward=0, turn=0)
                     break
                 
@@ -300,9 +268,10 @@ class RobotNavigator:
                 base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
             
             self.remove_sampled_points(self.exploring_id)
-            if self.if_close_enough((current_x, current_y), self.world_path[0]):
-                self.world_path.pop(0)
-                self.p.removeBody(self.nav_path_visualize_ids.pop(0))
+            # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
+            # if self.if_within_range(self.robot.robotId, (aim_x, aim_y), 0.9):    
+            self.world_path.pop(0)
+            self.p.removeBody(self.nav_path_visualize_ids.pop(0))
         
         print("Goal object should be nearby.")
 
