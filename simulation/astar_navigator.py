@@ -111,7 +111,7 @@ class RobotNavigator:
                 base_control(self.robot, self.p, forward=self.forward_speed*-1, turn=0)
         base_control(self.robot, self.p, forward=0, turn=0)
     
-    def turn_to_angle(self, target_angle):
+    def turn_to_angle(self, target_angle, strict=False):
         
         if self.reverse_move % 2 != 0:
             print("Rotate direction for reverse moving.")
@@ -138,30 +138,31 @@ class RobotNavigator:
                 print("Rotation completed.")
                 return True
             
-            # if not self.is_collision_free():
-            #     base_control(self.robot, self.p, forward=0, turn=0)
-            #     self.escape_collision("turn")
+            if strict:
+                if not self.is_collision_free():
+                    base_control(self.robot, self.p, forward=0, turn=0)
+                    self.escape_collision("turn")
 
-            #     # rotate back
-            #     start_back = time.time()
-            #     while time.time()-start_back<elapsed_time:
-            #         base_control(self.robot, self.p, forward=0, turn=-1 * self.turn_speed)
-            #         time.sleep(1./240.)
-            #         self.p.stepSimulation()
-            #     base_control(self.robot, self.p, forward=0, turn=0)
-                
-            #     # try another direction
-            #     if not tried_alternate_direction:
-            #         tried_alternate_direction = True
-            #         print("Switching to the opposite rotation direction.") 
-            #         self.turn_speed *= -1
-            #         # Recalculate the time estimate for the opposite direction
-            #         angle_diff = self.get_angle_diff(target_angle)
-            #         turn_time_estimate = abs(angle_diff) / self.turn_speed
-            #         start_time = time.time()  # Reset time for the new rotation attempt
-            #     else:
-            #         print("Collision detected in both directions. Stopping rotation.")
-            #         return False
+                    # rotate back
+                    start_back = time.time()
+                    while time.time()-start_back<elapsed_time:
+                        base_control(self.robot, self.p, forward=0, turn=-1 * self.turn_speed)
+                        time.sleep(1./240.)
+                        self.p.stepSimulation()
+                    base_control(self.robot, self.p, forward=0, turn=0)
+                    
+                    # try another direction
+                    if not tried_alternate_direction:
+                        tried_alternate_direction = True
+                        print("Switching to the opposite rotation direction.") 
+                        self.turn_speed *= -1
+                        # Recalculate the time estimate for the opposite direction
+                        angle_diff = self.get_angle_diff(target_angle)
+                        turn_time_estimate = abs(angle_diff) / self.turn_speed
+                        start_time = time.time()  # Reset time for the new rotation attempt
+                    else:
+                        print("Collision detected in both directions. Stopping rotation.")
+                        return False
 
             # Rotate the robot in the chosen direction
             base_control(self.robot, self.p, forward=0, turn=self.turn_speed)
@@ -170,7 +171,7 @@ class RobotNavigator:
     
     def is_collision_free(self):
         is_collision_free = True
-        for link_index in range(-1, self.num_links):  # -1 includes the base
+        for link_index in range(-1, self.num_links-1):  # -1 includes the base
             # Check contact points with all other objects
             contact_points = p.getContactPoints(bodyA=self.robot.robotId, linkIndexA=link_index)
             if contact_points:
