@@ -107,32 +107,31 @@ class RobotNavigator:
     def get_angle_diff(self, target_angle):
         return (target_angle - self.get_current_yaw() + np.pi) % (2 * np.pi) - np.pi
     
-    def escape_collision(self, mode):
-        if mode == "turn":
-            while not self.is_collision_free():
-                time.sleep(1. / 240.)
-                self.p.stepSimulation()
-                base_control(self.robot, self.p, forward=0, turn=-1*self.turn_speed)
-        elif mode == "forward":
-            reverse_duration = self.nav_map.grid_resolution / abs(self.forward_speed)
-            # Start moving backward
-            start_time = time.time()
-            while (time.time() - start_time) < reverse_duration:
-                time.sleep(1. / 240.)
-                self.p.stepSimulation()
-                base_control(self.robot, self.p, forward=-1 * self.forward_speed, turn=0)
-       
-        base_control(self.robot, self.p, forward=0, turn=0)
+    def distance_to_estimating_position(self, measure_position_tuple):
+        current_x, current_y = self.get_current_base_position_2D()
+        measure_x, measure_y = measure_position_tuple
+        diff_x, diff_y = (measure_x-current_x), (measure_y-current_y)
+        return diff_x, diff_y
     
-    def get_base_aabb(self):
+    # default is current position
+    def get_base_aabb(self, measure_position_tuple=None):
         base_x, base_y = self.get_current_base_position_2D()
+        if measure_position_tuple is not None:
+            trans_x, trans_y = self.distance_to_estimating_position(measure_position_tuple)
+            base_x += trans_x
+            base_y += trans_y
         half_base_extent = self.base_width / 2
         base_min = (base_x - half_base_extent, base_y - half_base_extent, self.base_z_range[0])
         base_max = (base_x + half_base_extent, base_y + half_base_extent, self.base_z_range[1])
         return base_min, base_max
 
-    def get_arm_aabb(self):
+    def get_arm_aabb(self, measure_position_tuple=None):
         arm_x, arm_y = self.get_current_arm_position_2D()
+        if measure_position_tuple is not None:
+            trans_x, trans_y = self.distance_to_estimating_position(measure_position_tuple)
+            arm_x += trans_x
+            arm_y += trans_y
+        
         arm_half_extent = self.arm_length / 2  # Assuming the arm is square in cross-section
         arm_min = (arm_x - arm_half_extent, arm_y - arm_half_extent, self.arm_z_range[0])
         arm_max = (arm_x + arm_half_extent, arm_y + arm_half_extent, self.arm_z_range[1])
@@ -267,7 +266,8 @@ class RobotNavigator:
             base_control(self.robot, self.p, forward=0, turn=smooth_turn_speed)
             time.sleep(1./240.)  # Step the simulation
             self.p.stepSimulation()
-    
+
+    # prevent arm change during base movement    
     def freeze_arm(self):
         # Step 1: Capture current arm joint positions
         arm_joint_indices = [8, 10, 11, 12, 13, 14, 16]  # Replace with actual indices for your arm joints
@@ -277,7 +277,6 @@ class RobotNavigator:
         for joint, position in zip(arm_joint_indices, current_positions):
             self.p.setJointMotorControl2(self.robot.robotId, joint, p.POSITION_CONTROL, targetPosition=position, force=1000)
 
-    
     # follow planned path
     def move_according_to_path(self):
         while self.world_path:
@@ -306,8 +305,6 @@ class RobotNavigator:
                 self.freeze_arm()
                 
             self.remove_sampled_points(self.exploring_id)
-            # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
-            # if self.if_within_range(self.robot.robotId, (aim_x, aim_y), 0.9):    
             self.world_path.pop(0)
             self.p.removeBody(self.nav_path_visualize_ids.pop(0))
         
