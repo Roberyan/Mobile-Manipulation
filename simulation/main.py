@@ -113,7 +113,7 @@ def keyboard_control():
         
         mobot.get_observation()
 
-p.resetBasePositionAndOrientation(mobot.robotId, (1.534303157375897, -2.8175246336552509, 0.035), [0, 0, 0, 1])
+# p.resetBasePositionAndOrientation(mobot.robotId, (1.534303157375897, -2.8175246336552509, 0.035), [0, 0, 0, 1])
 
 mobot.get_observation()
 # keyboard_control()

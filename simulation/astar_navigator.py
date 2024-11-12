@@ -2,8 +2,6 @@ from stretch import base_control
 import time
 import numpy as np
 from utils.tools import *
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import heapq
 
 class RobotNavigator:
@@ -18,7 +16,7 @@ class RobotNavigator:
         self.robot = robot
         self.num_links = getNumLinks(self.robot.robotId)
         self.nav_map = nav_map
-        self.world_path = [self.map_to_world(x, y) for x, y in astar_path]
+        self.world_path = [self.map_to_world(x, y) for x, y in astar_path[2:]]
         self.get_robot_base_arm_metric()
         self.accept_range = 0.1
         self.path_point_id = self.p.createVisualShape(
@@ -40,7 +38,7 @@ class RobotNavigator:
         self.collision_free_obj_ids = [self.nav_map.objects_dict['plane'], self.robot.robotId]
         self.nav_path_visualize_ids = []
         self.sample_points_ids = []
-        
+
     def get_robot_base_arm_metric(self):
         base_aabb, arm_aabb = self.nav_map.getAABB(self.robot.robotId)
         self.base_length, self.base_width, self.base_height = base_aabb[1] - base_aabb[0]
@@ -205,7 +203,7 @@ class RobotNavigator:
         if self.if_within_range(self.nav_map.objects_dict["cabinet"], aim_tuple, 1.7):
             if self.forward_speed > 0:
                 self.change_mode()
-            return aim_tuple[0]+0.26, aim_tuple[1]
+            return aim_tuple[0]+0.18, aim_tuple[1]
         else:
             if self.forward_speed < 0:
                 self.change_mode()
@@ -254,7 +252,7 @@ class RobotNavigator:
                 smooth_turn_speed = self.turn_speed
 
             # Stop rotating if within tolerance of target angle
-            if abs(current_angle_diff) <= 0.05:
+            if abs(current_angle_diff) <= 0.02:
                 base_control(self.robot, self.p, forward=0, turn=0)
                 print("Aligned with target direction.")
                 return True
@@ -270,6 +268,16 @@ class RobotNavigator:
             time.sleep(1./240.)  # Step the simulation
             self.p.stepSimulation()
     
+    def freeze_arm(self):
+        # Step 1: Capture current arm joint positions
+        arm_joint_indices = [8, 10, 11, 12, 13, 14, 16]  # Replace with actual indices for your arm joints
+        current_positions = [self.p.getJointState(self.robot.robotId, joint)[0] for joint in arm_joint_indices]
+
+        # Step 2: Set arm joints to POSITION_CONTROL with captured positions
+        for joint, position in zip(arm_joint_indices, current_positions):
+            self.p.setJointMotorControl2(self.robot.robotId, joint, p.POSITION_CONTROL, targetPosition=position, force=1000)
+
+    
     # follow planned path
     def move_according_to_path(self):
         while self.world_path:
@@ -281,17 +289,22 @@ class RobotNavigator:
                 time.sleep(1. / 240.)
                 self.p.stepSimulation()
                 
+                if self.if_within_range(self.robot.robotId, (aim_x, aim_y), 0.5):
+                    base_control(self.robot, self.p, forward=0, turn=0)
+                    break
+                
                 # Turn toward the target direction
                 self.turn_to_position(aim_x, aim_y)
                 
                 # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
-                if self.if_within_range(self.robot.robotId, (aim_x, aim_y), 0.9):
+                if self.if_within_range(self.robot.robotId, (aim_x, aim_y)):
                     base_control(self.robot, self.p, forward=0, turn=0)
                     break
                 
                 print("Moving...")
                 base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
-            
+                self.freeze_arm()
+                
             self.remove_sampled_points(self.exploring_id)
             # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
             # if self.if_within_range(self.robot.robotId, (aim_x, aim_y), 0.9):    
