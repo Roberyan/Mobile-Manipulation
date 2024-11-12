@@ -44,6 +44,10 @@ class RobotNavigator:
     def get_robot_base_arm_metric(self):
         base_aabb, arm_aabb = self.nav_map.getAABB(self.robot.robotId)
         self.base_length, self.base_width, self.base_height = base_aabb[1] - base_aabb[0]
+         
+        # base length is not correct actually, should be the same as self.base_width.
+        self.base_length = self.base_width
+        
         self.arm_length, self.arm_width, self.arm_height = arm_aabb[1] - arm_aabb[0]
         self.base_z_range = (base_aabb[0][-1], base_aabb[1][-1])
         self.arm_z_range = (arm_aabb[0][-1], arm_aabb[1][-1])
@@ -105,10 +109,14 @@ class RobotNavigator:
     def escape_collision(self, mode):
         if mode == "turn":
             while not self.is_collision_free():
-                base_control(self.robot, self.p, forward=0, turn=self.turn_speed*-1)
+                base_control(self.robot, self.p, forward=0, turn=-1*self.turn_speed)
         elif mode == "forward":
-            while not self.is_collision_free():
-                base_control(self.robot, self.p, forward=self.forward_speed*-1, turn=0)
+            reverse_duration = self.nav_map.grid_resolution / abs(self.forward_speed)
+            # Start moving backward
+            start_time = time.time()
+            while (time.time() - start_time) < reverse_duration:
+                base_control(self.robot, self.p, forward=-1 * self.forward_speed, turn=0)
+       
         base_control(self.robot, self.p, forward=0, turn=0)
     
     def turn_to_angle(self, target_angle, strict=False):
@@ -204,6 +212,7 @@ class RobotNavigator:
         assert (self.forward_speed>0 and self.reverse_move%2 == 0) or \
             (self.forward_speed<0 and self.reverse_move%2 == 1), "Error speed direction and moving mode"
         
+        self.turn_to_angle(np.pi)
         self.forward_speed *= -1 
         self.reverse_move += 1
         
