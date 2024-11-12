@@ -359,22 +359,24 @@ class RobotNavigator:
 
     # visualize sampled collision free points
     def visualize_sampled_points(self, sampled_points):
-        if isinstance(sampled_points, list):
-            for point in sampled_points:
-                x, y = point
-                body_id = self.p.createMultiBody(
+        def visualize_tuple(tuple):
+            if len(tuple) == 2:
+                x, y = tuple
+                return self.p.createMultiBody(
                     baseVisualShapeIndex=self.sample_point_id,
                     basePosition=(x, y, 0)  # Adjust z-axis for better visibility
                 )
-                # Store the body ID for potential removal
-                self.sample_points_ids.append(body_id)
+            elif len(tuple) == 3:
+                return self.p.createMultiBody(
+                    baseVisualShapeIndex=self.sample_point_id,
+                    basePosition=tuple
+                )
+        
+        if isinstance(sampled_points, list):
+            for point in sampled_points:
+                self.sample_points_ids.append(visualize_tuple(point))
         elif isinstance(sampled_points, tuple):
-            x, y = sampled_points
-            body_id = self.p.createMultiBody(
-                baseVisualShapeIndex=self.exploring_point_id,
-                basePosition=(x, y, 0)  # Adjust z-axis for better visibility
-            )
-            return body_id
+            return visualize_tuple(sampled_points)
 
     # remove visualization
     def remove_sampled_points(self, sampled_point_ids=None):
