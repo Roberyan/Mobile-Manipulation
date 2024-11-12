@@ -93,7 +93,7 @@ class RobotNavigator:
         _, _, yaw = self.p.getEulerFromQuaternion(orientation)
         return yaw
     
-    def get_current_position_2D(self):
+    def get_current_base_position_2D(self):
         position_front = self.p.getLinkState(self.robot.robotId, self.base_index)[0]
         position_back = self.p.getLinkState(self.robot.robotId, self.reverse_index)[0]
         position = [(position_front[0]+position_back[0])/2, (position_front[1]+position_back[1])/2]
@@ -102,6 +102,12 @@ class RobotNavigator:
         # else:
         #     position = self.p.getLinkState(self.robot.robotId, self.reverse_index)[0]
         return position[0], position[1]
+    
+    def get_current_arm_position(self):
+        _, arm_aabb = self.nav_map.getAABB(self.robot.robotId)
+        aabb_min, aabb_max = arm_aabb 
+        center = (aabb_min+aabb_max)/2
+        return center[0], center[1], self.arm_z_range[0]
     
     def get_angle_diff(self, target_angle):
         return (target_angle - self.get_current_yaw() + np.pi) % (2 * np.pi) - np.pi
@@ -215,7 +221,8 @@ class RobotNavigator:
         self.turn_to_angle(np.pi)
         self.forward_speed *= -1 
         self.reverse_move += 1
-        
+    
+    # follow planned path
     def move_according_to_path(self):
         while self.world_path:
             aim_x, aim_y = self.world_path[0]
@@ -237,7 +244,7 @@ class RobotNavigator:
                         self.change_mode()
                         
                     alternative_pos = self.sample_and_get_nearest(
-                        self.get_current_position_2D(),
+                        self.get_current_base_position_2D(),
                         self.world_path[0], 
                         300, 1
                     )
@@ -245,7 +252,7 @@ class RobotNavigator:
                     aim_x, aim_y = alternative_pos[0]
                     print("-----------------")
                 
-                current_x, current_y = self.get_current_position_2D()
+                current_x, current_y = self.get_current_base_position_2D()
 
                 if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
                 # if self.if_within_range(self.robot.robotId, (aim_x, aim_y)):
@@ -312,10 +319,10 @@ class RobotNavigator:
         allowed_ids = set(self.collision_free_obj_ids).union(self.nav_path_visualize_ids)
         
         # check base first
-        base_range_half = self.base_width / 2
+        half_extent = self.base_width / 2
         existing_objects = self.p.getOverlappingObjects(
-            (sample_x-base_range_half, sample_y-base_range_half, self.base_z_range[0]),
-            (sample_x+base_range_half, sample_y+base_range_half, self.base_z_range[1])
+            (sample_x-half_extent, sample_y-half_extent, self.base_z_range[0]),
+            (sample_x+half_extent, sample_y+half_extent, self.base_z_range[1])
         )
         existing_objects = {obj[0] for obj in existing_objects}
         
@@ -325,101 +332,30 @@ class RobotNavigator:
         print("Available for base to move, checking if fit for robot arm...")
         # check arm then
         arm_z_min, arm_z_max = self.arm_z_range
-        arm_length_check_half = max(self.arm_length, self.arm_width) / 2
-        arm_width_check_half = min(self.arm_length, self.arm_width) / 2
-        arm_center = [
-            (sample_x+base_range_half-arm_length_check_half, sample_y),
-            (sample_x-base_range_half+arm_length_check_half, sample_y),
-            (sample_x,sample_y+base_range_half-arm_length_check_half),
-            (sample_x,sample_y-base_range_half+arm_length_check_half)
-        ]
-        for arm_position in arm_center:
-            arm_x, arm_y = arm_position
-            if arm_x == sample_x:
-                existing_objects = self.p.getOverlappingObjects(
-                    (arm_x-arm_width_check_half, arm_y-arm_length_check_half, arm_z_min),
-                    (arm_x+arm_width_check_half, arm_y+arm_length_check_half, arm_z_max)
-                )
-            else:
-                existing_objects = self.p.getOverlappingObjects(
-                    (arm_x-arm_length_check_half, arm_y-arm_width_check_half, arm_z_min),
-                    (arm_x+arm_length_check_half, arm_y+arm_width_check_half, arm_z_max)
-                )
-            if existing_objects is None:
-                return True
-            
-            existing_objects = {obj[0] for obj in existing_objects}
-            if existing_objects.issubset(allowed_ids):
-                return True
-        return False
-
-    # visualize relative robot aabbs for checking
-    def visualize_aabb(self, sample_x, sample_y):
-        # Calculate base AABB
-        base_range_half = max(self.base_height, self.base_width) / 2
-        base_aabb_min = (sample_x - base_range_half, sample_y - base_range_half)
-        
-        arm_length_check_half = max(self.arm_length, self.arm_width) / 2
-        arm_width_check_half = min(self.arm_length, self.arm_width) / 2
-        
-        # Positions for arm extensions (sides of the base)
-        arm_centers = [
-            (sample_x + base_range_half - arm_length_check_half, sample_y),  # Right side
-            (sample_x - base_range_half+ arm_length_check_half, sample_y),  # Left side
-            (sample_x, sample_y + base_range_half - arm_length_check_half),  # Top side
-            (sample_x, sample_y - base_range_half + arm_length_check_half)   # Bottom side
-        ]
-        
-        fig, ax = plt.subplots(figsize=(10, 10))
-
-        # Plot base AABB
-        ax.add_patch(
-            patches.Rectangle(
-                base_aabb_min,
-                base_range_half * 2,
-                base_range_half * 2,
-                linewidth=2,
-                edgecolor='blue',
-                facecolor='none',
-                label='Base AABB'
+        for corner_x, corner_y in [
+            (sample_x + half_extent, sample_y + half_extent),
+            (sample_x + half_extent, sample_y - half_extent),
+            (sample_x - half_extent, sample_y + half_extent),
+            (sample_x - half_extent, sample_y - half_extent)
+        ]:
+            # Check for collisions at each corner
+            corner_objects = self.p.getOverlappingObjects(
+                (corner_x - half_extent, corner_y - half_extent, arm_z_min),
+                (corner_x + half_extent, corner_y + half_extent, arm_z_max)
             )
-        )
-        
-        # Plot arm AABBs
-        for i, (arm_x, arm_y) in enumerate(arm_centers):
-            if arm_x == sample_x:  # Vertical arms (top and bottom)
-                arm_aabb_min = (arm_x - arm_width_check_half, arm_y - arm_length_check_half)
-                arm_aabb_max = (arm_x + arm_width_check_half, arm_y + arm_length_check_half)
-            else:  # Horizontal arms (left and right)
-                arm_aabb_min = (arm_x - arm_length_check_half, arm_y - arm_width_check_half)
-                arm_aabb_max = (arm_x + arm_length_check_half, arm_y + arm_width_check_half)
             
-            ax.add_patch(
-                patches.Rectangle(
-                    arm_aabb_min,
-                    arm_aabb_max[0] - arm_aabb_min[0],
-                    arm_aabb_max[1] - arm_aabb_min[1],
-                    linewidth=1.5,
-                    edgecolor='green',
-                    facecolor='none',
-                    label=f'Arm AABB {i+1}' # Only show label once
-                )
-            )
-        
-        # Center the plot around the sample point
-        ax.set_xlim(sample_x - 2 * base_range_half, sample_x + 2 * base_range_half)
-        ax.set_ylim(sample_y - 2 * base_range_half, sample_y + 2 * base_range_half)
-        
-        # Set plot properties
-        ax.set_title('AABB Visualization for Base and Arm')
-        ax.set_xlabel('X-coordinate')
-        ax.set_ylabel('Y-coordinate')
-        ax.grid(True)
-        ax.legend()
-        ax.set_aspect('equal', adjustable='box')
-        
-        # Show the plot
-        plt.show()
+            # If no objects at the corner, proceed
+            if corner_objects is None:
+                return True
+
+            corner_objects = {obj[0] for obj in corner_objects}
+
+            # If the corner objects aren't a subset of allowed IDs, it's not valid
+            if not corner_objects.issubset(allowed_ids):
+                return False
+
+        # If all corners pass the check, it's a valid sample
+        return True
 
     # visualize sampled collision free points
     def visualize_sampled_points(self, sampled_points):
