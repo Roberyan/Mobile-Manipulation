@@ -125,6 +125,7 @@ class RobotNavigator:
         base_max = (base_x + half_base_extent, base_y + half_base_extent, self.base_z_range[1])
         return base_min, base_max
 
+    # default is current position
     def get_arm_aabb(self, measure_position_tuple=None):
         arm_x, arm_y = self.get_current_arm_position_2D()
         if measure_position_tuple is not None:
@@ -137,6 +138,72 @@ class RobotNavigator:
         arm_max = (arm_x + arm_half_extent, arm_y + arm_half_extent, self.arm_z_range[1])
         return arm_min, arm_max
     
+    # get intersection volume of aabbs
+    def calculate_intersection_volume(self, aabb1, aabb2):
+        # Calculate overlap along each axis (x, y, z)
+        x_overlap = max(0, min(aabb1[1][0], aabb2[1][0]) - max(aabb1[0][0], aabb2[0][0]))
+        y_overlap = max(0, min(aabb1[1][1], aabb2[1][1]) - max(aabb1[0][1], aabb2[0][1]))
+        z_overlap = max(0, min(aabb1[1][2], aabb2[1][2]) - max(aabb1[0][2], aabb2[0][2]))
+        
+        # Calculate and return the intersection volume
+        return x_overlap * y_overlap * z_overlap
+    
+    def get_aabb_center_symmetry_2D(self, aabb, reference_position):
+        aabb_min, aabb_max = aabb
+        
+        # Calculate the center of the original AABB in 2D (x, y only)
+        aabb_center_2d = (
+            (aabb_min[0] + aabb_max[0]) / 2,
+            (aabb_min[1] + aabb_max[1]) / 2
+        )
+        
+        # Calculate the 2D offset from the AABB center to the reference position
+        offset_x = reference_position[0] - aabb_center_2d[0]
+        offset_y = reference_position[1] - aabb_center_2d[1]
+        
+        # Create the symmetric AABB by moving each corner in the x and y directions only
+        symmetric_aabb_min = (
+            aabb_min[0] + 2 * offset_x,
+            aabb_min[1] + 2 * offset_y,
+            aabb_min[2]  # z-coordinate remains the same
+        )
+        symmetric_aabb_max = (
+            aabb_max[0] + 2 * offset_x,
+            aabb_max[1] + 2 * offset_y,
+            aabb_max[2]  # z-coordinate remains the same
+        )
+        
+        # Return the new symmetric AABB
+        return symmetric_aabb_min, symmetric_aabb_max
+    
+    # intersection volume measurement
+    def get_intersection_volume_at_position(self, measure_position_tuple):        
+        allowed_ids = set(self.collision_free_obj_ids).union(self.nav_path_visualize_ids)
+        allowed_ids.add(self.exploring_id)
+        
+        base_min, base_max = self.get_base_aabb(measure_position_tuple)
+        base_overlapping_objects = self.p.getOverlappingObjects(base_min, base_max)
+        if base_overlapping_objects:
+            base_ids = {obj[0] for obj in base_overlapping_objects}
+            if not base_ids.issubset(allowed_ids):
+                print("Collision detected at base; skipping arm calculation.")
+                return float('inf')  # Large number to indicate base collision
+        
+        arm_min, arm_max = self.get_arm_aabb(measure_position_tuple)
+        arm_overlapping_objects = self.p.getOverlappingObjects(arm_min, arm_max)
+        intersection_volume = 0
+        if arm_overlapping_objects:
+            overlapping_ids = {obj[0] for obj in arm_overlapping_objects}
+            non_allowed_ids = overlapping_ids - allowed_ids
+            if non_allowed_ids:
+                # Use a list comprehension to filter out the objects that need intersection calculation
+                intersection_volume = sum(
+                    self.calculate_intersection_volume(getAABB(obj_id), np.array((arm_min, arm_max)))
+                    for obj_id, _ in arm_overlapping_objects if obj_id in non_allowed_ids
+                )
+        return intersection_volume
+        
+    # upgraded collision detection
     def is_collision_free(self):
         allowed_ids = set(self.collision_free_obj_ids).union(self.nav_path_visualize_ids)
         allowed_ids.add(self.exploring_id)
