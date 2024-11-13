@@ -107,33 +107,33 @@ class RobotNavigator:
     def get_angle_diff(self, target_angle):
         return (target_angle - self.get_current_yaw() + np.pi) % (2 * np.pi) - np.pi
     
-    def distance_to_estimating_position(self, measure_position_tuple):
+    def distance_to_estimating_position(self, aim_tuple):
         current_x, current_y = self.get_current_base_position_2D()
-        measure_x, measure_y = measure_position_tuple
+        measure_x, measure_y = aim_tuple
         diff_x, diff_y = (measure_x-current_x), (measure_y-current_y)
         return diff_x, diff_y
     
     # default is current position
-    def get_base_aabb(self, measure_position_tuple=None):
+    def get_base_aabb(self, aim_tuple=None, zoom=1):
         base_x, base_y = self.get_current_base_position_2D()
-        if measure_position_tuple is not None:
-            trans_x, trans_y = self.distance_to_estimating_position(measure_position_tuple)
+        if aim_tuple is not None:
+            trans_x, trans_y = self.distance_to_estimating_position(aim_tuple)
             base_x += trans_x
             base_y += trans_y
-        half_base_extent = self.base_width / 2
+        half_base_extent = zoom * self.base_width / 2
         base_min = (base_x - half_base_extent, base_y - half_base_extent, self.base_z_range[0])
         base_max = (base_x + half_base_extent, base_y + half_base_extent, self.base_z_range[1])
         return base_min, base_max
 
     # default is current position
-    def get_arm_aabb(self, measure_position_tuple=None):
+    def get_arm_aabb(self, aim_tuple=None, zoom=1):
         arm_x, arm_y = self.get_current_arm_position_2D()
-        if measure_position_tuple is not None:
-            trans_x, trans_y = self.distance_to_estimating_position(measure_position_tuple)
+        if aim_tuple is not None:
+            trans_x, trans_y = self.distance_to_estimating_position(aim_tuple)
             arm_x += trans_x
             arm_y += trans_y
         
-        arm_half_extent = self.arm_length / 2  # Assuming the arm is square in cross-section
+        arm_half_extent = zoom * self.arm_length / 2  # Assuming the arm is square in cross-section
         arm_min = (arm_x - arm_half_extent, arm_y - arm_half_extent, self.arm_z_range[0])
         arm_max = (arm_x + arm_half_extent, arm_y + arm_half_extent, self.arm_z_range[1])
         return arm_min, arm_max
@@ -177,14 +177,17 @@ class RobotNavigator:
         return symmetric_aabb_min, symmetric_aabb_max
     
     # intersection volume measurement
-    def get_intersection_volume_at_position(self, measure_position_tuple, center_symmetric=False):        
+    def get_intersection_volume_at_position(self, aim_tuple, center_symmetric=False, zoom=1):        
         allowed_ids = set(self.collision_free_obj_ids).union(self.nav_path_visualize_ids)
-        allowed_ids.add(self.exploring_id)
+        try:
+            allowed_ids.add(self.exploring_id)
+        except:
+            pass
         
         if center_symmetric:
-            base_min, base_max = self.get_aabb_center_symmetry_2D(self.get_base_aabb(measure_position_tuple), measure_position_tuple)
+            base_min, base_max = self.get_aabb_center_symmetry_2D(self.get_base_aabb(aim_tuple, zoom), aim_tuple)
         else:
-            base_min, base_max = self.get_base_aabb(measure_position_tuple)
+            base_min, base_max = self.get_base_aabb(aim_tuple, zoom)
         
         base_overlapping_objects = self.p.getOverlappingObjects(base_min, base_max)
         if base_overlapping_objects:
@@ -194,9 +197,9 @@ class RobotNavigator:
                 return float('inf')  # Large number to indicate base collision
         
         if center_symmetric:
-            arm_min, arm_max = self.get_aabb_center_symmetry_2D(self.get_arm_aabb(measure_position_tuple),measure_position_tuple)
+            arm_min, arm_max = self.get_aabb_center_symmetry_2D(self.get_arm_aabb(aim_tuple, zoom),aim_tuple)
         else:
-            arm_min, arm_max = self.get_arm_aabb(measure_position_tuple)
+            arm_min, arm_max = self.get_arm_aabb(aim_tuple, zoom)
         arm_overlapping_objects = self.p.getOverlappingObjects(arm_min, arm_max)
         intersection_volume = 0
         if arm_overlapping_objects:
@@ -272,12 +275,28 @@ class RobotNavigator:
         self.reverse_move += 1
     
     # decide move forward or reverse to go, currently dummy judgement
-    def mode_decide(self, aim_tuple):
+    def mode_decide(self, aim_tuple, zoom=1.5):
+        current_collide_score = self.get_intersection_volume_at_position(aim_tuple, zoom=zoom)
+        reverse_collide_score = self.get_intersection_volume_at_position(aim_tuple, center_symmetric=True, zoom=zoom)
+        
+        if current_collide_score == reverse_collide_score:
+            # if forward and reverse move is the same, prefer forward move
+            if self.forward_speed < 0:
+                self.change_mode()
+        elif current_collide_score > reverse_collide_score:
+            # current mode is not the optimized, change mode
+            self.change_mode()
+        
+        return aim_tuple
+        
+        #        
         if self.if_within_range(self.nav_map.objects_dict["cabinet"], aim_tuple, 1.7):
+            # within the area, use reverse move
             if self.forward_speed > 0:
                 self.change_mode()
-            return aim_tuple[0]+0.18, aim_tuple[1]
+            return aim_tuple[0]+0.18, aim_tuple[1] # tried offset
         else:
+            # outside the are, use forward move
             if self.forward_speed < 0:
                 self.change_mode()
             return aim_tuple
