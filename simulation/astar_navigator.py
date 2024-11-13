@@ -177,11 +177,15 @@ class RobotNavigator:
         return symmetric_aabb_min, symmetric_aabb_max
     
     # intersection volume measurement
-    def get_intersection_volume_at_position(self, measure_position_tuple):        
+    def get_intersection_volume_at_position(self, measure_position_tuple, center_symmetric=False):        
         allowed_ids = set(self.collision_free_obj_ids).union(self.nav_path_visualize_ids)
         allowed_ids.add(self.exploring_id)
         
-        base_min, base_max = self.get_base_aabb(measure_position_tuple)
+        if center_symmetric:
+            base_min, base_max = self.get_aabb_center_symmetry_2D(self.get_base_aabb(measure_position_tuple), measure_position_tuple)
+        else:
+            base_min, base_max = self.get_base_aabb(measure_position_tuple)
+        
         base_overlapping_objects = self.p.getOverlappingObjects(base_min, base_max)
         if base_overlapping_objects:
             base_ids = {obj[0] for obj in base_overlapping_objects}
@@ -189,7 +193,10 @@ class RobotNavigator:
                 print("Collision detected at base; skipping arm calculation.")
                 return float('inf')  # Large number to indicate base collision
         
-        arm_min, arm_max = self.get_arm_aabb(measure_position_tuple)
+        if center_symmetric:
+            arm_min, arm_max = self.get_aabb_center_symmetry_2D(self.get_arm_aabb(measure_position_tuple),measure_position_tuple)
+        else:
+            arm_min, arm_max = self.get_arm_aabb(measure_position_tuple)
         arm_overlapping_objects = self.p.getOverlappingObjects(arm_min, arm_max)
         intersection_volume = 0
         if arm_overlapping_objects:
