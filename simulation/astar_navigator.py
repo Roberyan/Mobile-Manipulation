@@ -11,7 +11,7 @@ class RobotNavigator:
     base_index = 3
     reverse_index = 6
     
-    def __init__(self, p, robot, nav_map, astar_path):
+    def __init__(self, p, robot, nav_map, astar_path, aim_obj_id):
         self.p = p
         self.robot = robot
         self.num_links = getNumLinks(self.robot.robotId)
@@ -35,7 +35,7 @@ class RobotNavigator:
             rgbaColor=[1, 1, 0, 1]  # Bright orange color for start points
         )
 
-        self.collision_free_obj_ids = [self.nav_map.objects_dict['plane'], self.robot.robotId]
+        self.collision_free_obj_ids = [self.nav_map.objects_dict['plane'], self.robot.robotId, aim_obj_id]
         self.nav_path_visualize_ids = []
         self.sample_points_ids = []
 
@@ -176,6 +176,14 @@ class RobotNavigator:
         # Return the new symmetric AABB
         return symmetric_aabb_min, symmetric_aabb_max
     
+    # get overlapping ids
+    def get_overlapping_ids(self, aabb):
+        aabb_min, aabb_max = aabb
+        overlapping_objects = self.p.getOverlappingObjects(aabb_min, aabb_max)
+        if overlapping_objects:
+            return {obj[0] for obj in overlapping_objects}
+        else:
+            return set()
     # intersection volume measurement
     def get_intersection_volume_at_position(self, aim_tuple, center_symmetric=False, zoom=1):        
         allowed_ids = set(self.collision_free_obj_ids).union(self.nav_path_visualize_ids)
@@ -185,32 +193,27 @@ class RobotNavigator:
             pass
         
         if center_symmetric:
-            base_min, base_max = self.get_aabb_center_symmetry_2D(self.get_base_aabb(aim_tuple, zoom), aim_tuple)
+            base_min, base_max = self.get_aabb_center_symmetry_2D(self.get_base_aabb(aim_tuple, 1), aim_tuple)
         else:
-            base_min, base_max = self.get_base_aabb(aim_tuple, zoom)
+            base_min, base_max = self.get_base_aabb(aim_tuple, 1)
         
-        base_overlapping_objects = self.p.getOverlappingObjects(base_min, base_max)
-        if base_overlapping_objects:
-            base_ids = {obj[0] for obj in base_overlapping_objects}
-            if not base_ids.issubset(allowed_ids):
-                print("Collision detected at base; skipping arm calculation.")
-                return float('inf')  # Large number to indicate base collision
+        base_ids = self.get_overlapping_ids((base_min, base_max))
+        if not base_ids.issubset(allowed_ids):
+            print("Collision detected at base; skipping arm calculation.")
+            return float('inf')  # Large number to indicate base collision
         
         if center_symmetric:
             arm_min, arm_max = self.get_aabb_center_symmetry_2D(self.get_arm_aabb(aim_tuple, zoom),aim_tuple)
         else:
             arm_min, arm_max = self.get_arm_aabb(aim_tuple, zoom)
-        arm_overlapping_objects = self.p.getOverlappingObjects(arm_min, arm_max)
         intersection_volume = 0
-        if arm_overlapping_objects:
-            overlapping_ids = {obj[0] for obj in arm_overlapping_objects}
-            non_allowed_ids = overlapping_ids - allowed_ids
-            if non_allowed_ids:
-                # Use a list comprehension to filter out the objects that need intersection calculation
-                intersection_volume = sum(
-                    self.calculate_intersection_volume(getAABB(obj_id), np.array((arm_min, arm_max)))
-                    for obj_id, _ in arm_overlapping_objects if obj_id in non_allowed_ids
-                )
+        arm_ids = self.get_overlapping_ids((arm_min, arm_max))
+        if not arm_ids.issubset(allowed_ids):
+            non_allowed_ids = arm_ids - allowed_ids
+            intersection_volume = sum(
+                self.calculate_intersection_volume(getAABB(obj_id), np.array((arm_min, arm_max)))
+                for obj_id in non_allowed_ids
+            )
         return intersection_volume
         
     # upgraded collision detection
@@ -274,19 +277,38 @@ class RobotNavigator:
         self.forward_speed *= -1 
         self.reverse_move += 1
     
+    # dummy sampling strategy
+    def find_possible_better_alternative(self, aim_tuple):
+        return aim_tuple[0]+0.18, aim_tuple[1]
+    
+    def if_change_mode_allowed(self):
+        current_tuple = self.get_current_base_position_2D()
+        change_collide = self.get_intersection_volume_at_position(current_tuple, center_symmetric=True, zoom=1.3)
+        if change_collide != 0:
+            return False
+        no_change_collide = self.get_intersection_volume_at_position(current_tuple)
+        if no_change_collide >= change_collide:
+            return True
+        
     # decide move forward or reverse to go, currently dummy judgement
     def mode_decide(self, aim_tuple, zoom=1.5):
+        
+        change_flag = self.if_change_mode_allowed()
+
         current_collide_score = self.get_intersection_volume_at_position(aim_tuple, zoom=zoom)
         reverse_collide_score = self.get_intersection_volume_at_position(aim_tuple, center_symmetric=True, zoom=zoom)
         
         if current_collide_score == reverse_collide_score:
             # if forward and reverse move is the same, prefer forward move
-            if self.forward_speed < 0:
+            if self.forward_speed < 0 and change_flag:
                 self.change_mode()
-        elif current_collide_score > reverse_collide_score:
+        elif current_collide_score > reverse_collide_score and change_flag:
             # current mode is not the optimized, change mode
             self.change_mode()
         
+        if current_collide_score > 0 and reverse_collide_score > 0:
+            aim_tuple = self.find_possible_better_alternative(aim_tuple)
+            
         return aim_tuple
         
         #        

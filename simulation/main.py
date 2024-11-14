@@ -113,6 +113,7 @@ def keyboard_control():
         
         mobot.get_observation()
 
+# test for problem area
 # p.resetBasePositionAndOrientation(mobot.robotId, (1.534303157375897, -2.8175246336552509, 0.035), [0, 0, 0, 1])
 
 mobot.get_observation()
@@ -127,7 +128,7 @@ astar_path = nav_map.get_astar_map(mobot.robotId, goal_id) # astar planning from
 
 if astar_path is not None:
     # nav_map.visualize_astar(astar_path, mobot.robotId, goal_id) # show 2d astar map with planned path    
-    navigator = RobotNavigator(p, mobot, nav_map, astar_path) # navigator to move robot
+    navigator = RobotNavigator(p, mobot, nav_map, astar_path, goal_id) # navigator to move robot
     navigator.show_path_in_world() # show planned path in simulation env
     navigator.move_according_to_path() # move according to planned path
     
