@@ -287,7 +287,7 @@ class RobotNavigator:
         if change_collide != 0:
             return False
         no_change_collide = self.get_intersection_volume_at_position(current_tuple)
-        if no_change_collide >= change_collide:
+        if no_change_collide == 0 :
             return True
         
     # decide move forward or reverse to go, currently dummy judgement
@@ -311,18 +311,6 @@ class RobotNavigator:
             
         return aim_tuple
         
-        #        
-        if self.if_within_range(self.nav_map.objects_dict["cabinet"], aim_tuple, 1.7):
-            # within the area, use reverse move
-            if self.forward_speed > 0:
-                self.change_mode()
-            return aim_tuple[0]+0.18, aim_tuple[1] # tried offset
-        else:
-            # outside the are, use forward move
-            if self.forward_speed < 0:
-                self.change_mode()
-            return aim_tuple
-    
     def turn_time_estimate(self, aim_x, aim_y):
         if self.reverse_move % 2 != 0:
             print("Rotate direction for reverse moving.")
