@@ -6,6 +6,7 @@ import os
 import pybullet as p
 from stretch import *
 from utils.tools import *
+from utils.grasp import Grasp
 
 # navigation tools
 from simulation.astar_global_planner import NavMap
@@ -15,7 +16,7 @@ p.connect(p.GUI)
 p.configureDebugVisualizer(p.COV_ENABLE_GUI, 1)
 p.setGravity(0, 0, -9.81)
 
-mobot, objects_dict = init_scene(p)
+mobot, objects_dict, mug_id, drawer_id = init_scene(p)
     
 forward=0
 turn=0
@@ -26,8 +27,30 @@ gripper_open=0
 roll=0
 yaw=0
 
-def keyboard_control():
+def grasp_init(p):
+    grasper = Grasp(p, mobot.robotId)
     constraint = None
+    gripped = False
+    for _ in range(100):
+        p.stepSimulation()
+        time.sleep(1./240.)
+    time.sleep(5)
+    end_effector_index = 16
+    mug_position =  p.getBasePositionAndOrientation(mug_id)[0]
+    drawer_position = p.getBasePositionAndOrientation(drawer_id)[0]
+    goal_position = [drawer_position[0]-0.45, drawer_position[1], 0.7]
+    base_position = [3.69, 0.07, 3]
+    grasper.move_arm_to_position(mobot.robotId, 
+                                    target_pos=base_position, 
+                                    end_effector_index=end_effector_index)
+    return grasper
+
+def keyboard_control():
+    mug_position =  p.getBasePositionAndOrientation(mug_id)[0]
+    drawer_position = p.getBasePositionAndOrientation(drawer_id)[0]
+    goal_position = [drawer_position[0]-0.45, drawer_position[1], 0.7]
+    constraint = None
+    grasper = grasp_init(p)
     while (1):
         time.sleep(1./240.)
         keys = p.getKeyboardEvents()
@@ -101,6 +124,30 @@ def keyboard_control():
                 gripper_open = 1
             if (k == ord('e') and (v & p.KEY_WAS_RELEASED)):
                 gripper_open = 0
+
+
+            if (k == ord('u') and (v & p.KEY_WAS_TRIGGERED) and not gripped):
+                lift_pos = grasper.grip_and_lift_cup(mobot.robotId, 
+                                cup_pos=mug_position,
+                                end_effector_index=16,
+                                left_finger_index=18,
+                                right_finger_index=19)
+                gripped=True
+                grasper.move_arm_to_position(
+                    mobot.robotId,
+                    target_pos=[goal_position[0], lift_pos[1], lift_pos[2]],
+                    end_effector_index=16
+                )
+                grasper.move_arm_to_position(
+                    mobot.robotId,
+                    target_pos=goal_position,
+                    end_effector_index=16
+                )
+                grasper.open_gripper(
+                    mobot.robotId,
+                    left_finger_index=18,
+                    right_finger_index=19
+                )
 
         base_control(mobot, p, forward, turn)
         arm_control(mobot, p, up, stretch, roll, yaw)

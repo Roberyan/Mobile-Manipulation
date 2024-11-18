@@ -353,7 +353,7 @@ def init_scene(p, mug_random=False):
     for _ in range(30):
         p.stepSimulation()
 
-    return mobot, object_dict
+    return mobot, object_dict, mug_id, drawer_id
 
 
 def get_global_action_from_local(robot, delta_forward):
