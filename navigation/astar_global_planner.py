@@ -39,7 +39,7 @@ class NavMap:
         [-1, -1, np.sqrt(2)]  # Diagonal down-left
     ]
     
-    def __init__(self, p, robotId, objects_dict, grid_resolution,) -> None:
+    def __init__(self, p, robotId, objects_dict, grid_resolution) -> None:
         self.p = p
         self.grid_resolution = grid_resolution
         # Initialize min and max bounds with extreme values

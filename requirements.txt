@@ -9,3 +9,5 @@ torchsummary
 tensorboardX
 pyrealsense2
 Pillow
+opencv-python
+scikit-image

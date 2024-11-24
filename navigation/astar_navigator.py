@@ -1,17 +1,19 @@
-from stretch import base_control
+from simulation.stretch import base_control, Robot
+from navigation.ee_planner import CollisionChecker
 import time
 import numpy as np
 from utils.tools import *
 import heapq
+import traceback
 
 class RobotNavigator:
-    forward_speed = 0.1
+    forward_speed = 2
     turn_speed = 0.3
     reverse_move = 0 # odd for reverse move
     base_index = 3
     reverse_index = 6
     
-    def __init__(self, p, robot, nav_map, astar_path, aim_obj_id):
+    def __init__(self, p, robot: Robot, nav_map, astar_path, aim_obj_id):
         self.p = p
         self.robot = robot
         self.num_links = getNumLinks(self.robot.robotId)
@@ -38,6 +40,11 @@ class RobotNavigator:
         self.collision_free_obj_ids = [self.nav_map.objects_dict['plane'], self.robot.robotId, aim_obj_id]
         self.nav_path_visualize_ids = []
         self.sample_points_ids = []
+        self.collision_checker = CollisionChecker(
+            self.p, self.robot,
+            compressed_states=robot.compressed_joint_states,
+            stretched_states=robot.stretched_joint_states
+        )
 
     def get_robot_base_arm_metric(self):
         base_aabb, arm_aabb = self.nav_map.getAABB(self.robot.robotId)
@@ -380,32 +387,45 @@ class RobotNavigator:
         for joint, position in zip(arm_joint_indices, current_positions):
             self.p.setJointMotorControl2(self.robot.robotId, joint, p.POSITION_CONTROL, targetPosition=position, force=1000)
 
+    def move_arm_to_base(self):
+        # Try to move arm to base for ease of movement and avoiding extra collision checks
+        # so base position and expected arm position are same
+        # Contracting  arm should not cause collision because arm if arm is already outstretched
+        
+        self.robot.contract_arm()
+        self.robot.move_arm_joints_to_contracted_position()
+
     # follow planned path
     def move_according_to_path(self):
+        self.move_arm_to_base()
         while self.world_path:
             aim_x, aim_y = self.mode_decide(self.world_path[0])
             self.exploring_id = self.visualize_sampled_points((aim_x, aim_y))
 
             # real action part
             while True:
-                time.sleep(1. / 240.)
-                self.p.stepSimulation()
-                
-                if self.if_within_range(self.robot.robotId, (aim_x, aim_y), 0.5):
-                    base_control(self.robot, self.p, forward=0, turn=0)
-                    break
-                
-                # Turn toward the target direction
-                self.turn_to_position(aim_x, aim_y)
-                
-                # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
-                if self.if_within_range(self.robot.robotId, (aim_x, aim_y)):
-                    base_control(self.robot, self.p, forward=0, turn=0)
-                    break
-                
-                print("Moving...")
-                base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
-                self.freeze_arm()
+                try:
+                    time.sleep(1. / 240.)
+                    self.p.stepSimulation()
+                    
+                    if self.if_within_range(self.robot.robotId, (aim_x, aim_y), 0.5):
+                        base_control(self.robot, self.p, forward=0, turn=0)
+                        break
+                    
+                    # Turn toward the target direction
+                    self.turn_to_position(aim_x, aim_y)
+                    
+                    # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
+                    if self.if_within_range(self.robot.robotId, (aim_x, aim_y)):
+                        base_control(self.robot, self.p, forward=0, turn=0)
+                        break
+                    
+                    print("Moving...")
+                    base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
+                    self.freeze_arm()
+                except Exception:
+                    traceback.print_exc()
+                    pass
                 
             self.remove_sampled_points(self.exploring_id)
             self.world_path.pop(0)

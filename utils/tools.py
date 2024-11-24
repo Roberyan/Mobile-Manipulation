@@ -1,7 +1,13 @@
 import numpy as np
 import pybullet as p
+from math import atan2, degrees, pi
+import time
+import traceback
+import math 
+from scipy.spatial.transform import Rotation
 
-def visualize_aabb_filled(object_aabb, is_2d=False, color=[0, 0, 1, 0.3]):  # last value in color is transparency
+
+def visualize_aabb_filled(p, object_aabb, is_2d=False, color=[0, 0, 1, 0.3]):  # last value in color is transparency
     visual_shapes = []
     
     # Get AABB corners
@@ -63,7 +69,7 @@ def checkObject2DSize(obj_id):
 
 def get_robot_base_pose(p, robot_id, verbose=False):
     # base_link_index
-    link_index = 4
+    link_index = 3
     link_state = p.getLinkState(robot_id, link_index)
     link_position = link_state[0]
     link_orientation = link_state[1]
@@ -141,7 +147,7 @@ def getAABB(object_id):
     
     return AABB_obj
 
-def attach(object_id, robot_id, ee_link_index, threshould=0.2):
+def attach(p, object_id, robot_id, ee_link_index, threshould=0.2):
     obj_position = p.getBasePositionAndOrientation(object_id)[0]
     ee_position = p.getLinkState(robot_id, ee_link_index)[0]
 
@@ -172,4 +178,385 @@ def motion_planning_test(p, robot_id, target_position):
     current_ee_position, _, _ = get_robot_ee_pose(p, robot_id)
     if np.linalg.norm(np.array(target_position) - np.array(current_ee_position)) < 0.1:
         print("The end-effector is already at the target position!")
+
+
+def calculate_angle_to_aim(base_position, target_position):
+    """
+    Calculate precise angle between two points in 3D space
+    """
+    p1 = np.array(base_position)
+    p2 = np.array(target_position)
+    
+    # Project to XY plane for angle calculation
+    diff_vector = p2 - p1
+    angle = np.arctan2(diff_vector[1], diff_vector[0])
+    return angle
+
+def get_direction_from_position(position):
+    x, y, z = position
+    yaw = np.arctan2(y, x)
+    
+    # Calculate pitch (elevation angle)
+    pitch = np.arctan2(z, np.sqrt(x**2 + y**2))
+    
+    # Roll cannot be determined
+    roll = None
+    
+    return roll, pitch, yaw
+
+
+def get_angle_diff(base, target):
+    base_y = get_direction_from_position(base)[2]
+    target_y = get_direction_from_position(target)[2]
+    return base_y - target_y
+
+def get_target_orientation(p, relative_angle, current_orientation):
+    # Get current Euler angles
+    current_euler = p.getEulerFromQuaternion(current_orientation)
+    
+    # Create new Euler angles, maintaining roll and pitch but updating yaw
+    new_yaw = current_euler[2] + relative_angle  # Add relative angle to current yaw
+    new_euler = [current_euler[0], current_euler[1], new_yaw]  # [roll, pitch, new_yaw]
+    
+    # Convert Euler angles back to quaternion
+    target_orientation = p.getQuaternionFromEuler(new_euler)
+    
+    return target_orientation
+
+def calculate_rotation_to_90_counterclockwise(p, robot_base_pos, target_arm_pos, current_orientation):
+    # Calculate global target angle
+    dx = target_arm_pos[0] - robot_base_pos[0]
+    dy = target_arm_pos[1] - robot_base_pos[1]
+    global_target_angle = math.atan2(dy, dx)
+    
+    # Add 90 degrees (π/2) counterclockwise offset
+    offset_angle = global_target_angle + math.pi/2
+    
+    # Current robot's yaw
+    current_yaw = p.getEulerFromQuaternion(current_orientation)[2]
+    
+    # Calculate relative rotation needed
+    relative_angle = offset_angle - current_yaw
+    
+    # Normalize to -pi to pi range
+    relative_angle = (relative_angle + math.pi) % (2 * math.pi) - math.pi
+    
+    return relative_angle
+
+def calculate_rotation_angle(p, robot_pos, target_pos, current_orientation):
+    """
+    Calculate the rotation angle needed to face the target
+    
+    Args:
+    robot_pos (tuple): Current robot position
+    target_pos (list): Target object position
+    current_orientation (tuple): Current robot orientation quaternion
+    
+    Returns:
+    float: Rotation angle relative to current orientation
+    """
+    # Calculate vector to target
+    dx = target_pos[0] - robot_pos[0]
+    dy = target_pos[1] - robot_pos[1]
+    
+    # Calculate global target angle
+    global_target_angle = math.atan2(dy, dx)
+    
+    # Convert current orientation to Euler angles
+    current_euler = p.getEulerFromQuaternion(current_orientation)
+    current_yaw = current_euler[2]
+    
+    # Calculate relative rotation needed
+    relative_angle = global_target_angle - current_yaw
+    
+    # Normalize angle to -pi to pi range
+    relative_angle = (relative_angle + math.pi) % (2 * math.pi) - math.pi
+    
+    return relative_angle
+
+def smoothly_rotate_arm_to_position(p, robot_id, joint_index, base_position, target_position, max_velocity=0.5):
+    """
+    Enhanced position-based smooth rotation
+    """
+    # Calculate initial angle and difference
+    #target_position = [-target_position[1], target_position[0], target_position[2]] # base and arm of bot are 90 apart
+    robot_base_position, r_orientation, _ = get_robot_base_pose(p, robot_id)
+    
+    angle_diff = calculate_rotation_to_90_counterclockwise(p, robot_base_position, target_position, r_orientation)
+    
+    rotation_direction = np.sign(angle_diff)
+    # Increase velocity for more definitive movement
+    max_velocity = 0.1 
+    
+    iterations = 0
+    max_iterations = 10000
+    
+    while abs(angle_diff) > 0.06 and iterations < max_iterations: # We need bot to face 90 away from target
+        try:
+            # More aggressive velocity control
+            p.setJointMotorControl2(
+                bodyUniqueId=robot_id,
+                jointIndex=joint_index,
+                controlMode=p.VELOCITY_CONTROL,
+                targetVelocity=rotation_direction * max_velocity,
+                force=1000  # Increased force
+            )
+            
+            # More simulation steps
+            for _ in range(10):
+                p.stepSimulation()
+            
+            # Update current state
+            current_position, r_orientation, _ = get_robot_base_pose(p, robot_id)
+            angle_diff = calculate_rotation_to_90_counterclockwise(p, current_position, target_position, r_orientation)
+            iterations += 1
+            
+            
         
+        except Exception as e:
+            print(f"Rotation error: {e}")
+            break
+    
+    # Stop joint movement
+    p.setJointMotorControl2(
+        bodyUniqueId=robot_id,
+        jointIndex=joint_index,
+        controlMode=p.VELOCITY_CONTROL,
+        targetVelocity=0,
+        force=500
+    )
+    
+    print(f"Rotation completed after {iterations} iterations")
+
+def calculate_position_angle(base_position, target_position):
+    """ Calculate precise angle between two points in 3D space """ 
+    p1 = np.array(base_position) 
+    p2 = np.array(target_position) 
+    # Project to XY plane for angle calculation 
+    diff_vector = p2 - p1 
+    angle = np.arctan2(diff_vector[1], diff_vector[0]) 
+    return angle
+
+def get_aabb_from_vertices(vertices):
+    """
+    Calculate Axis-Aligned Bounding Box from 8 vertices of a box.
+    
+    Args:
+        vertices: List of 8 points, where each point is [x, y, z]
+                 The order of vertices doesn't matter
+    
+    Returns:
+        tuple: (min_coords, max_coords) where each is [x, y, z]
+    """
+    # Convert vertices to numpy array for easier computation
+    vertices_array = np.array(vertices)
+    
+    # Get min and max along each axis
+    min_coords = np.min(vertices_array, axis=0)
+    max_coords = np.max(vertices_array, axis=0)
+    
+    return min_coords.tolist(), max_coords.tolist()
+
+
+
+
+def translate_aabb(aabb,
+                  current_base_pos,
+                  target_base_pos):
+    """
+    Translate an AABB from current base position to target base position
+    
+    Args:
+        aabb: Tuple of (mins, maxs) each (3,) arrays
+        current_base_pos: Current base position (3,)
+        target_base_pos: Target base position (3,)
+    
+    Returns:
+        Tuple of (mins, maxs) in target position
+    """
+    mins, maxs = aabb
+    target_base_pos = np.array(target_base_pos)
+    current_base_pos = np.array(current_base_pos)
+    # Calculate the translation vector
+    translation = target_base_pos - current_base_pos
+    
+    # Simply add the translation to both mins and maxs
+    new_mins = mins + translation
+    new_maxs = maxs + translation
+    
+    return new_mins.tolist(), new_maxs.tolist()
+
+def get_aabb_top_points(aabb_min, aabb_max):
+    """
+    Get the four points of the top plane of an AABB.
+    Points are returned in counter-clockwise order starting from front-left.
+    
+    Args:
+        aabb_min: [x_min, y_min, z_min]
+        aabb_max: [x_max, y_max, z_max]
+    
+    Returns:
+        List of 4 points [x, y, z] forming the top plane
+    """
+    z = aabb_max[2]  # Use the maximum z-coordinate (top plane)
+    
+    # Get the four points in counter-clockwise order
+    top_points = [
+        [aabb_min[0], aabb_min[1], z],  # Front-left
+        [aabb_max[0], aabb_min[1], z],  # Front-right
+        [aabb_max[0], aabb_max[1], z],  # Back-right
+        [aabb_min[0], aabb_max[1], z]   # Back-left
+    ]
+    
+    return top_points
+
+def get_combined_aabb(body_id_1, body_id_2):
+    """
+    Calculate combined Axis-Aligned Bounding Box (AABB) for two objects in PyBullet.
+    
+    Args:
+        body_id_1: PyBullet body ID of first object
+        body_id_2: PyBullet body ID of second object
+        
+    Returns:
+        tuple: (min_coords, max_coords) where each is [x, y, z]
+    """
+    # Get AABB for first object
+    aabb_min_1, aabb_max_1 = p.getAABB(body_id_1)
+    
+    # Get AABB for second object
+    aabb_min_2, aabb_max_2 = p.getAABB(body_id_2)
+    
+    # Convert to numpy arrays for easier computation
+    aabb_min_1 = np.array(aabb_min_1)
+    aabb_max_1 = np.array(aabb_max_1)
+    aabb_min_2 = np.array(aabb_min_2)
+    aabb_max_2 = np.array(aabb_max_2)
+    
+    # Calculate combined AABB
+    combined_min = np.minimum(aabb_min_1, aabb_min_2)
+    combined_max = np.maximum(aabb_max_1, aabb_max_2)
+    
+    return combined_min.tolist(), combined_max.tolist()
+
+
+
+def get_aabb_center(aabb_min, aabb_max):
+    """
+    Calculate the center point of an AABB.
+    
+    Args:
+        aabb_min: [x_min, y_min, z_min]
+        aabb_max: [x_max, y_max, z_max]
+    
+    Returns:
+        [x_center, y_center, z_center]
+    """
+    center = [
+        (aabb_min[0] + aabb_max[0]) / 2,  # x center
+        (aabb_min[1] + aabb_max[1]) / 2,  # y center
+        (aabb_min[2] + aabb_max[2]) / 2   # z center
+    ]
+    return center
+
+
+def transform_point(point, 
+                    current_base_pos,
+                    current_base_orn,
+                    target_base_pos,
+                    target_base_orn):
+    """
+    Transform a point from current world position to target world position
+    
+    Args:
+        point: Point in world frame (3,)
+        current_base_pos: Current base position (3,)
+        current_base_orn: Current base orientation as quaternion (4,) [x,y,z,w]
+        target_base_pos: Target base position (3,)
+        target_base_orn: Target base orientation as quaternion (4,) [x,y,z,w]
+    
+    Returns:
+        Point in new world position (3,)
+    """
+    # Calculate relative transformation
+    current_rot = Rotation.from_quat(current_base_orn)
+    target_rot = Rotation.from_quat(target_base_orn)
+    
+    # Get relative rotation
+    relative_rot = target_rot * current_rot.inv()
+    
+    # Transform the point:
+    # 1. Express point relative to current base position
+    # 2. Apply relative rotation
+    # 3. Move to target position
+    transformed_point = relative_rot.apply(point - current_base_pos) + target_base_pos
+    
+    return transformed_point
+
+def transform_aabb(aabb,
+                  current_base_pos,
+                  current_base_orn,
+                  target_base_pos,
+                  target_base_orn):
+    """
+    Transform an AABB from current base frame to target base frame
+    
+    Args:
+        aabb: Tuple of (mins, maxs) each (3,) arrays
+        current_base_pos: Current base position (3,)
+        current_base_orn: Current base orientation as quaternion (4,) [x,y,z,w]
+        target_base_pos: Target base position (3,)
+        target_base_orn: Target base orientation as quaternion (4,) [x,y,z,w]
+    
+    Returns:
+        Tuple of (mins, maxs) in target frame
+    """
+    mins, maxs = aabb
+    
+    # Get all 8 corners of the AABB
+    corners = np.array([
+        [mins[0], mins[1], mins[2]],
+        [mins[0], mins[1], maxs[2]],
+        [mins[0], maxs[1], mins[2]],
+        [mins[0], maxs[1], maxs[2]],
+        [maxs[0], mins[1], mins[2]],
+        [maxs[0], mins[1], maxs[2]],
+        [maxs[0], maxs[1], mins[2]],
+        [maxs[0], maxs[1], maxs[2]]
+    ])
+    
+    # Transform each corner
+    transformed_corners = np.array([
+        transform_point(corner, current_base_pos, current_base_orn,
+                       target_base_pos, target_base_orn)
+        for corner in corners
+    ])
+    
+    # Get new AABB by taking min/max of transformed corners
+    new_mins = np.min(transformed_corners, axis=0)
+    new_maxs = np.max(transformed_corners, axis=0)
+    
+    return new_mins.tolist(), new_maxs.tolist()
+
+def check_aabb_overlap(aabb1, aabb2):
+    """
+    Check if two AABBs are overlapping.
+    
+    :param aabb1: First AABB ((min_x, min_y, min_z), (max_x, max_y, max_z))
+    :param aabb2: Second AABB ((min_x, min_y, min_z), (max_x, max_y, max_z))
+    :return: True if overlapping, False otherwise
+    """
+    (min1_x, min1_y, min1_z), (max1_x, max1_y, max1_z) = aabb1
+    (min2_x, min2_y, min2_z), (max2_x, max2_y, max2_z) = aabb2
+    
+    # Check for overlap in each dimension
+    # If there's no overlap in any dimension, the boxes don't intersect
+    x_overlap = max1_x >= min2_x and max2_x >= min1_x
+    y_overlap = max1_y >= min2_y and max2_y >= min1_y
+    z_overlap = max1_z >= min2_z and max2_z >= min1_z
+    
+    return x_overlap and y_overlap and z_overlap
+
+
+def obj_aabb(p, obj_id):
+    return p.getAABB(obj_id)

@@ -3,14 +3,22 @@ import os
 import argparse
 import sys
 import time
-import pybullet as p
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from collections import defaultdict
+from enum import Enum
+
 
 import numpy as np
 from PIL import Image
 import os
-
+from utils.tools import get_robot_ee_pose, get_robot_base_pose, get_aabb_center
 
 sys.path.append('./')
+
+class ArmMovementDirection(Enum):
+    UP = 'up'
+    DOWN = 'down'
 
 def init_scene(p, mug_random=False):
     root_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),"../")
@@ -23,7 +31,7 @@ def init_scene(p, mug_random=False):
     ################ Robot
     mobot_urdf_file = os.path.join(root_dir,"resource/urdf/stretch/stretch.urdf")
     mobot = Robot(pybullet_api=p, start_pos=[-0.8,0.0,0.03], urdf_file=mobot_urdf_file)
-
+    
     for _ in range(30):
         p.stepSimulation()
 
@@ -331,6 +339,7 @@ def init_scene(p, mug_random=False):
                                     globalScaling=mug_scaling,
                                     basePosition=mug_position,
                                     baseOrientation=mug_orientation)
+    object_dict['final_mug'] = mug_id
     p.changeVisualShape(mug_id, -1, rgbaColor=[1.0,1.0,1.0,1])
     obj_friction_ceof = 4000.0
     p.changeDynamics(mug_id, -1, lateralFriction=obj_friction_ceof)
@@ -356,7 +365,7 @@ def init_scene(p, mug_random=False):
     return mobot, object_dict, mug_id, drawer_id
 
 
-def get_global_action_from_local(robot, delta_forward):
+def get_global_action_from_local(p, robot, delta_forward):
     # Get the current joint angle of joint 2 (rotation around z-axis)
     joint2_state = p.getJointState(robot, 3)
     current_yaw = joint2_state[0]  # Get the current rotation (yaw angle)
@@ -368,7 +377,7 @@ def get_global_action_from_local(robot, delta_forward):
     return delta_x, delta_y
 
 def base_control(robot, p, forward=0, turn=0):
-    x_forward, y_forward = get_global_action_from_local(robot.robotId, forward)
+    x_forward, y_forward = get_global_action_from_local(p, robot.robotId, forward)
     p.setJointMotorControl2(robot.robotId,3,p.VELOCITY_CONTROL,targetVelocity=turn,force=1000)
     p.setJointMotorControl2(robot.robotId,1,p.VELOCITY_CONTROL,targetVelocity=x_forward,force=1000)
     p.setJointMotorControl2(robot.robotId,2,p.VELOCITY_CONTROL,targetVelocity=y_forward,force=1000)
@@ -391,17 +400,66 @@ def gripper_control(mobot, p, cmd=0):
     # 1 is open, 0 is close
     p.setJointMotorControl2(mobot.robotId,18,p.VELOCITY_CONTROL,targetVelocity=-cmd,force=1000)      # joint left finger
     p.setJointMotorControl2(mobot.robotId,19,p.VELOCITY_CONTROL,targetVelocity=cmd,force=1000)    # joint right gripper
-    
+
+
+class LinkStateDetector:
+    def __init__(self, p, robotId):
+        # When this function is called the bot is facing the positive x axis
+        self.p = p
+        self.robotId = robotId
+        self.end_effector_index = 17
+        self.base_index = 3
+        self.vertical_link_index = 7
+        self.lift_link_index = 8
+        self.arms_indices = [9, 10, 11, 12, 13]
+        self.top_link_index = 20
+        self.collision_link_indices = [
+            self.base_index,
+            self.end_effector_index,
+            self.vertical_link_index,
+            self.lift_link_index,
+            *self.arms_indices,
+            self.top_link_index
+        ]
+        self.arm_movement_indices = [
+            self.lift_link_index,
+            *self.arms_indices,
+            self.end_effector_index
+        ]
+
+    def get_current_link_info(self):
+        link_indices = self.collision_link_indices
+        link_info = {}
+        for idx in link_indices:
+            aabb = self.p.getAABB(self.robotId, idx)
+            centre_pos = get_aabb_center(*aabb)
+            link_state_idx = self.p.getLinkState(self.robotId, idx)
+            pos = link_state_idx[0]
+            ori = link_state_idx[1]
+            link_info[idx] = {
+                'aabb_centre_position': centre_pos,
+                'aabb': aabb,
+                'link_pos':pos,
+                'link_orientation':ori,
+            }
+        return link_info
+
+
 class Robot:
     def __init__(self,pybullet_api,start_pos=[0.4,0.3,0.4],urdf_file=None,resource_dir=None,project_root_dir=None):
-        self.p = p#pybullet_api
+        self.p = pybullet_api
 
         self.gripperMaxForce = 1000.0
         self.armMaxForce = 200.0
-
+        self.robot_threshold = 1.0 # distinguish base and arm
         self.start_pos = start_pos
         self.camera_index = 13
-
+        self.end_effector_idx = 17
+        self.left_finger_index = 18
+        self.right_finger_index = 19
+        self.max_reachable_distance = None
+        self.max_height = None
+        self.original_joint_positions = None
         self.project_dir = project_root_dir
         self.resource_dir = resource_dir
         self.urdf_file = urdf_file
@@ -409,6 +467,15 @@ class Robot:
         self.p.resetBasePositionAndOrientation(self.robotId, self.start_pos, [0, 0, 0, 1])
         #  self.p.resetJointState(self.robotId, self.camera_index, -0.3)
         self.p.resetJointState(self.robotId, 4, 0.5)
+        self.movable_joints = self.get_movable_joints()
+        self.link_state_detector = LinkStateDetector(self.p, self.robotId)
+        self.compressed_joint_states = self.link_state_detector.get_current_link_info()
+        self.get_max_ee_reach(False)
+        self.stretched_joint_states = self.link_state_detector.get_current_link_info()
+        self.move_arm_joints_to_contracted_position()
+        self.move_arm_to_max_height()
+        self.max_height_joint_states = self.link_state_detector.get_current_link_info()
+        self.move_arm_joints_to_contracted_position()
 
     def get_observation(self):
         camera_link_pos = self.p.getLinkState(self.robotId,self.camera_index)[0]
@@ -436,7 +503,7 @@ class Robot:
                                       height=image_height,
                                       viewMatrix = camera_view_matrix,
                                       projectionMatrix=camera_proj_matrix,
-                                      renderer = p.ER_BULLET_HARDWARE_OPENGL)
+                                      renderer = self.p.ER_BULLET_HARDWARE_OPENGL)
         
     def save_image(self, filepath, filename):
         camera_link_pos = self.p.getLinkState(self.robotId,self.camera_index)[0]
@@ -479,3 +546,144 @@ class Robot:
     
     def get_position(self):
         return self.p.getBasePositionAndOrientation(self.robotId)[0]
+    
+    def getLinkInfo(self):
+        numJoint = self.p.getNumJoints(self.robotId)
+        LinkList = ['base']
+        for jointIndex in range(numJoint):
+            jointInfo = self.p.getJointInfo(self.robotId, jointIndex)
+            link_name = jointInfo[12]
+            if link_name not in LinkList:
+                LinkList.append(link_name)
+        return LinkList
+
+    def getNumLinks(self):
+        return len(self.getLinkInfo())
+    
+    def getAABB(self):
+        numLinks = self.getNumLinks()
+        AABB_base = []
+        AABB_arm = []
+        for link_id in range(-1, numLinks-1):
+            aabb = self.p.getAABB(self.robotId, link_id)
+            if aabb[1][2] <= self.robot_threshold:
+                AABB_base.append(aabb)
+            else:
+                AABB_arm.append(aabb)
+        
+        AABB_base_array = np.array(AABB_base)
+        AABB_base_min = np.min(AABB_base_array[:, 0, :], axis=0)
+        AABB_base_max = np.max(AABB_base_array[:, 1, :], axis=0)
+        AABB_base = np.array([AABB_base_min, AABB_base_max])
+        
+        AABB_arm_array = np.array(AABB_arm)
+        AABB_arm_min = np.min(AABB_arm_array[:, 0, :], axis=0)
+        AABB_arm_max = np.max(AABB_arm_array[:, 1, :], axis=0)
+        AABB_arm = np.array([AABB_arm_min, AABB_arm_max])
+        
+        return AABB_base, AABB_arm
+
+    def get_movable_joints(self):
+        num_joints = self.p.getNumJoints(self.robotId)
+        movable_joints = []
+        for i in range(num_joints):
+            joint_info = self.p.getJointInfo(self.robotId, i)
+            if joint_info[2] != self.p.JOINT_FIXED:
+                movable_joints.append((i))
+                print("index, name", i, joint_info[1])
+        self.movable_joints = movable_joints
+        return movable_joints
+    
+    def get_max_ee_reach(self, reset=True):
+        robot_id = self.robotId
+        p = self.p
+        original_joint_positions = {}
+        remove_indices = {1, 2, 3, 4, 5}  # Use a set for faster membership tests
+        movable_joints = self.movable_joints
+        # Use filter to keep only elements that are not in remove_indices
+        movable_joints = list(filter(lambda joint: joint not in remove_indices, movable_joints))
+
+        for joint_index in movable_joints:
+            joint_state = p.getJointState(robot_id, joint_index)
+            original_joint_positions[joint_index] = joint_state[0]  # joint_state[0] is the joint position
+        self.original_joint_positions = original_joint_positions
+        joint_limits = {}
+        for joint_index in movable_joints:
+            joint_info = p.getJointInfo(robot_id, joint_index)
+            joint_type = joint_info[2]
+            
+            if joint_type == p.JOINT_PRISMATIC:
+                joint_lower_limit = p.getJointInfo(robot_id, joint_index)[8]  # Lower joint limit (min distance)
+                joint_upper_limit = p.getJointInfo(robot_id, joint_index)[9]  # Upper joint limit (max distance)
+                joint_limits[joint_index] = (joint_lower_limit, joint_upper_limit)
+        
+        for joint_index in movable_joints:
+            # Set joint to its max limit
+            if joint_index in joint_limits:
+                min_limit, max_limit = joint_limits[joint_index]
+                # For revolute joints, set the joint to its max angle
+                if p.getJointInfo(robot_id, joint_index)[2] == p.JOINT_REVOLUTE:
+                    p.setJointMotorControl2(robot_id, joint_index, p.POSITION_CONTROL, targetPosition=max_limit)
+                # For prismatic joints, set the joint to its max position
+                elif p.getJointInfo(robot_id, joint_index)[2] == p.JOINT_PRISMATIC:
+                    p.setJointMotorControl2(robot_id, joint_index, p.POSITION_CONTROL, targetPosition=max_limit)
+
+        for _ in range(0, 100):
+            time.sleep(1/240)
+            p.stepSimulation()
+        end_effector_position = get_robot_ee_pose(p, robot_id)[0]  # Position of the last link (end effector)
+
+        # Compute the linear distance from the base to the end-effector
+        base_position = p.getBasePositionAndOrientation(robot_id)[0] # Get the base position (XYZ)
+        print(f"{base_position} {end_effector_position}")
+        end_effector_xy = np.array([end_effector_position[0], end_effector_position[1]])  # (x, y) of end effector
+        base_xy = np.array([base_position[0], base_position[1]])  # (x, y) of base
+
+        # Compute the Euclidean distance in the x, y plane
+        distance_xy = np.linalg.norm(end_effector_xy - base_xy)
+
+        # Now, reset each joint back to its original position
+        if reset:
+            self.move_arm_joints_to_contracted_position()
+        self.max_reachable_distance = distance_xy
+        self.max_height = end_effector_position[2]
+        return self.max_reachable_distance, self.max_height
+
+    def move_arm_joints_to_contracted_position(self):
+
+        # First contracting the arm.
+        # If the arm is larger than min possible then there is no collision
+        for arm_index in [*self.link_state_detector.arm_movement_indices, self.link_state_detector.lift_link_index]:
+            joint_lower_limit = self.p.getJointInfo(self.robotId, arm_index)[8]
+
+            self.p.setJointMotorControl2(self.robotId, arm_index, 
+                                        self.p.POSITION_CONTROL, targetPosition=joint_lower_limit)
+            for _ in range(0, 20):
+                time.sleep(1/240)
+                self.p.stepSimulation()
+        return
+    
+
+    def contract_arm(self):
+        for arm_index in self.link_state_detector.arm_movement_indices:
+            joint_lower_limit = self.p.getJointInfo(self.robotId, arm_index)[8]
+
+            self.p.setJointMotorControl2(self.robotId, arm_index, 
+                                        self.p.POSITION_CONTROL, targetPosition=joint_lower_limit)
+            for _ in range(0, 20):
+                time.sleep(1/240)
+                self.p.stepSimulation()
+        return
+
+
+    def move_arm_to_max_height(self):
+
+        joint_upper_limit = self.p.getJointInfo(self.robotId, self.link_state_detector.lift_link_index)[9]
+
+        self.p.setJointMotorControl2(self.robotId, self.link_state_detector.lift_link_index, 
+                                     self.p.POSITION_CONTROL, targetPosition=joint_upper_limit)
+        for _ in range(0, 100):
+            time.sleep(1/240)
+            self.p.stepSimulation()
+        
+    

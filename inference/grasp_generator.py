@@ -95,7 +95,8 @@ class GraspGenerator:
 
         if self.fig:
             plot_grasp(fig=self.fig, rgb_img=self.cam_data.get_rgb(rgb, False), grasps=grasps, save=True)
-
+        return target_position, grasp_pose, target_angle
+    
     def run(self):
         while True:
             if np.load(self.grasp_request):
