@@ -5,6 +5,151 @@ import time
 import traceback
 import math 
 from scipy.spatial.transform import Rotation
+from cachetools import LRUCache, cached
+cache = LRUCache(maxsize=10)
+
+
+import numpy as np
+
+
+def visualize_points(p, points, radius=0.05, color=[1, 0, 0, 1]):
+    """
+    Visualize a list of 3D points in PyBullet as spheres.
+    
+    Args:
+        p: PyBullet physics client
+        points: List of 3D points to visualize, e.g., [(x1, y1, z1), (x2, y2, z2), ...]
+        radius: Radius of each sphere to represent the points
+        color: RGBA color of the spheres
+    """
+    bodies = []
+    for point in points:
+        # Create a visual sphere at each point
+        visual_shape = p.createVisualShape(
+            p.GEOM_SPHERE, 
+            radius=radius, 
+            rgbaColor=color
+        )
+        
+        # Create a body with the visual shape at the point location
+        bodies.append(p.createMultiBody(
+            baseVisualShapeIndex=visual_shape, 
+            basePosition=point
+        ))
+    return bodies
+
+def reorder_vertices(points):
+    """
+    Reorders a list of 3D points by sorting the points and assigning them
+    to the correct vertices for the box.
+
+    The order of vertices for a box should be as follows:
+    0: (-x, -y, -z), 1: (+x, -y, -z), 2: (+x, +y, -z), 3: (-x, +y, -z)
+    4: (-x, -y, +z), 5: (+x, -y, +z), 6: (+x, +y, +z), 7: (-x, +y, +z)
+
+    Args:
+        points: A list of 8 points (each as [x, y, z])
+
+    Returns:
+        A list of points reordered to match the above convention
+    """
+    sorted_points = sorted(points, key=lambda p: (p[2], p[1], p[0]))
+    
+    # Rearrange the sorted points into corners
+    corners = [
+        sorted_points[0],  # 0: (-x, -y, -z)
+        sorted_points[1],  # 1: (+x, -y, -z)
+        sorted_points[3],  # 2: (+x, +y, -z)
+        sorted_points[2],  # 3: (-x, +y, -z)
+        sorted_points[4],  # 4: (-x, -y, +z)
+        sorted_points[5],  # 5: (+x, -y, +z)
+        sorted_points[7],  # 6: (+x, +y, +z)
+        sorted_points[6],  # 7: (-x, +y, +z)
+    ]
+    return corners
+
+def visualize_box_from_vertices(p, vertices, color=[0, 0, 1, 0.3]):
+    """
+    Visualize a box using 6 planes from vertices.
+    Each plane is a thin box visual shape.
+    
+    Args:
+        p: PyBullet physics client
+        vertices: List of 8 3D points defining the box corners
+        color: RGBA color for the box faces
+    """
+    
+    corners = reorder_vertices(vertices)
+    corners = np.array(corners)
+    # Define faces by vertex indices
+    # Assuming vertices are in the following order:
+    # 0: (-x, -y, -z), 1: (+x, -y, -z), 2: (+x, +y, -z), 3: (-x, +y, -z)
+    # 4: (-x, -y, +z), 5: (+x, -y, +z), 6: (+x, +y, +z), 7: (-x, +y, +z)
+    faces = [
+        # Front face (-y)
+        [0, 1, 5, 4],
+        # Back face (+y)
+        [2, 3, 7, 6],
+        # Left face (-x)
+        [0, 3, 7, 4],
+        # Right face (+x)
+        [1, 2, 6, 5],
+        # Bottom face (-z)
+        [0, 1, 2, 3],
+        # Top face (+z)
+        [4, 5, 6, 7]
+    ]
+    
+    bodies = []
+    
+    for face_vertices_idx in faces:
+        # Get the four corners of the face
+        face_points = corners[face_vertices_idx]
+        
+        # Calculate face center
+        face_center = np.mean(face_points, axis=0)
+        
+        # Calculate face dimensions
+        v1 = face_points[1] - face_points[0]  # First edge
+        v2 = face_points[3] - face_points[0]  # Second edge
+        
+        # Calculate face extents
+        extent1 = np.linalg.norm(v1) / 2
+        extent2 = np.linalg.norm(v2) / 2
+        
+        # Determine which axis this face is perpendicular to
+        normal = np.cross(v1, v2)
+        normal = normal / np.linalg.norm(normal)
+        
+        # Create visual shape based on face orientation
+        if abs(normal[0]) > 0.9:  # Face is perpendicular to x-axis
+            visual_shape = p.createVisualShape(
+                p.GEOM_BOX,
+                halfExtents=[0.001, extent1, extent2],
+                rgbaColor=color
+            )
+        elif abs(normal[1]) > 0.9:  # Face is perpendicular to y-axis
+            visual_shape = p.createVisualShape(
+                p.GEOM_BOX,
+                halfExtents=[extent1, 0.001, extent2],
+                rgbaColor=color
+            )
+        else:  # Face is perpendicular to z-axis
+            visual_shape = p.createVisualShape(
+                p.GEOM_BOX,
+                halfExtents=[extent1, extent2, 0.001],
+                rgbaColor=color
+            )
+        
+        # Create body for the face
+        body = p.createMultiBody(
+            baseVisualShapeIndex=visual_shape,
+            basePosition=face_center
+        )
+        bodies.append(body)
+    
+    return bodies
+
 
 
 def visualize_aabb_filled(p, object_aabb, is_2d=False, color=[0, 0, 1, 0.3]):  # last value in color is transparency
@@ -54,7 +199,7 @@ def visualize_aabb_filled(p, object_aabb, is_2d=False, color=[0, 0, 1, 0.3]):  #
     
     return visual_shapes
     
-def remove_visual_shapes(visual_shapes):
+def remove_visual_shapes(p, visual_shapes):
     """
     Removes all the visual shapes stored in the visual_shapes list
     """
@@ -243,7 +388,7 @@ def calculate_rotation_to_90_counterclockwise(p, robot_base_pos, target_arm_pos,
     
     return relative_angle
 
-def calculate_rotation_angle(p, robot_pos, target_pos, current_orientation):
+def calculate_rotation_angle(p, robot_pos, target_pos, current_orientation, reverse=False):
     """
     Calculate the rotation angle needed to face the target
     
@@ -266,13 +411,15 @@ def calculate_rotation_angle(p, robot_pos, target_pos, current_orientation):
     current_euler = p.getEulerFromQuaternion(current_orientation)
     current_yaw = current_euler[2]
     
-    # Calculate relative rotation needed
-    relative_angle = global_target_angle - current_yaw
+    angle_towards = global_target_angle - current_yaw
+    angle_away = (global_target_angle + math.pi) - current_yaw
     
-    # Normalize angle to -pi to pi range
-    relative_angle = (relative_angle + math.pi) % (2 * math.pi) - math.pi
-    
-    return relative_angle
+    # Normalize both angles to -pi to pi range
+    angle_towards = (angle_towards + math.pi) % (2 * math.pi) - math.pi
+    angle_away = (angle_away + math.pi) % (2 * math.pi) - math.pi
+    if reverse:
+        return angle_away
+    return angle_towards
 
 def smoothly_rotate_arm_to_position(p, robot_id, joint_index, base_position, target_position, max_velocity=0.5):
     """
@@ -357,7 +504,34 @@ def get_aabb_from_vertices(vertices):
     
     return min_coords.tolist(), max_coords.tolist()
 
-
+def get_vertices_from_aabb(aabb_min, aabb_max):
+    """
+    Convert an Axis-Aligned Bounding Box (AABB) to vertices in the order:
+    0: (-x, -y, -z)    1: (+x, -y, -z)    2: (+x, +y, -z)    3: (-x, +y, -z)
+    4: (-x, -y, +z)    5: (+x, -y, +z)    6: (+x, +y, +z)    7: (-x, +y, +z)
+    
+    Args:
+        min_point: numpy array or list [x_min, y_min, z_min]
+        max_point: numpy array or list [x_max, y_max, z_max]
+    
+    Returns:
+        vertices: numpy array of shape (8, 3) containing the box vertices
+    """
+    x_min, y_min, z_min = aabb_min
+    x_max, y_max, z_max = aabb_max
+    
+    vertices = np.array([
+        [x_min, y_min, z_min],  # 0
+        [x_max, y_min, z_min],  # 1
+        [x_max, y_max, z_min],  # 2
+        [x_min, y_max, z_min],  # 3
+        [x_min, y_min, z_max],  # 4
+        [x_max, y_min, z_max],  # 5
+        [x_max, y_max, z_max],  # 6
+        [x_min, y_max, z_max]   # 7
+    ])
+    
+    return vertices
 
 
 def translate_aabb(aabb,
@@ -459,7 +633,6 @@ def get_aabb_center(aabb_min, aabb_max):
     ]
     return center
 
-
 def transform_point(point, 
                     current_base_pos,
                     current_base_orn,
@@ -493,6 +666,19 @@ def transform_point(point,
     
     return transformed_point
 
+
+def transform_points(points, current_base_pos,
+                  current_base_orn,
+                  target_base_pos,
+                  target_base_orn):
+    transformed_corners = [
+        transform_point(corner, current_base_pos, current_base_orn,
+                       target_base_pos, target_base_orn)
+        for corner in points
+    ]
+    return transformed_corners
+    
+    
 def transform_aabb(aabb,
                   current_base_pos,
                   current_base_orn,
@@ -558,5 +744,122 @@ def check_aabb_overlap(aabb1, aabb2):
     return x_overlap and y_overlap and z_overlap
 
 
-def obj_aabb(p, obj_id):
+@cached(cache)
+def get_obj_aabb(p, obj_id):
     return p.getAABB(obj_id)
+
+
+def get_reverse_quaternion_pybullet(p, current_pos, current_orn):
+    """
+    Get quaternion for 180-degree rotation using PyBullet.
+    """
+    rotation_180 = [0, 0, 1, 0]  # 180-degree rotation quaternion
+    
+    # PyBullet handles the quaternion multiplication
+    _, new_quaternion = p.multiplyTransforms(current_pos, current_orn,
+                                           current_pos, rotation_180)
+    return new_quaternion
+
+
+def generate_surrounding_points(center_point, distance=0.18):
+    """
+    Generate 8 points around a given center point in different directions.
+    
+    Parameters:
+    - center_point: The central point (x, y)
+    - distance: Distance from the center point
+    
+    Returns:
+    - Dictionary of points in 8 different directions
+    """
+    # Directions in radians (0 is up, then clockwise)
+    directions = {
+        'up':          (math.pi/2),
+        'up_right':    (math.pi/4),
+        'up_left':     (3*math.pi/4),
+        'left':        (math.pi),
+        'right':       (0),
+        'down':        (3*math.pi/2),
+        'down_right':  (7*math.pi/4),
+        'down_left':   (5*math.pi/4)
+    }
+    
+    # Convert center point to numpy array if it's not already
+    center = np.array(center_point)
+    
+    # Generate points
+    points = []
+    for direction_name, angle in directions.items():
+        # Calculate x and y offsets using trigonometry
+        x = center[0] + distance * math.cos(angle)
+        y = center[1] + distance * math.sin(angle)
+        points.append((x, y))
+    
+    return points
+
+def find_perpendicular_line_points(points, n_points=100, distance=0.01):
+    """
+    Find points on a line perpendicular to the given collinear points.
+    
+    Parameters:
+    - points: List of 3 collinear points (a, b, c)
+    - n_points: Number of points to generate on the perpendicular line
+    - distance: Distance from the reference point
+    
+    Returns:
+    - Perpendicular line direction vector
+    - List of n points on the perpendicular line
+    """
+
+    
+    # Convert points to numpy arrays for easier vector operations
+    points = [np.array(p) for p in points]
+    
+    # Calculate the direction vector of the original line
+    original_line_vector = points[1] - points[0]
+    
+    # Create a perpendicular vector 
+    # We'll use a simple 2D rotation for this
+    # For 3D, we'd need a more robust method like cross product
+    perp_vector = np.array([-original_line_vector[1], original_line_vector[0]])
+    
+    # Normalize the perpendicular vector
+    perp_vector = perp_vector / np.linalg.norm(perp_vector)
+    
+    # Reference point (can be any of the given points, let's use the first)
+    reference_point = points[0]
+    
+    # Generate n points on the perpendicular line
+    perpendicular_points = []
+    for i in range(-(n_points//2), n_points//2 + (n_points%2)):
+        point = reference_point + i * distance * perp_vector
+        perpendicular_points.append(point)
+    
+    return perpendicular_points
+
+
+
+
+
+def get_all_obj_aabb(p):
+    num_bodies = p.getNumBodies()
+    object_ids = []
+    for body_id in range(num_bodies):
+        object_ids.append(body_id)
+    obj_aabbs = {}
+    for obj_id in object_ids:
+        aabb = get_obj_aabb(p, obj_id)
+        obj_aabbs[(obj_id, -1)] = {
+            'aabb': aabb,
+            'vertices': get_vertices_from_aabb(*aabb)
+        }
+        if obj_id in [9, 10,11,12]:
+            num_joints = p.getNumJoints(obj_id)
+            # All other links
+            for link_index in range(num_joints):
+                aabb = p.getAABB(obj_id, link_index)
+                obj_aabbs[(obj_id, link_index)] = {
+                    'aabb': aabb,
+                    'vertices': get_vertices_from_aabb(*aabb)
+                }
+    return obj_aabbs

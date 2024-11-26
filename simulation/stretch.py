@@ -12,7 +12,7 @@ from enum import Enum
 import numpy as np
 from PIL import Image
 import os
-from utils.tools import get_robot_ee_pose, get_robot_base_pose, get_aabb_center
+from utils.tools import *
 
 sys.path.append('./')
 
@@ -426,7 +426,7 @@ class LinkStateDetector:
             *self.arms_indices,
             self.end_effector_index
         ]
-
+    
     def get_current_link_info(self):
         link_indices = self.collision_link_indices
         link_info = {}
@@ -441,6 +441,7 @@ class LinkStateDetector:
                 'aabb': aabb,
                 'link_pos':pos,
                 'link_orientation':ori,
+                'vertices': get_vertices_from_aabb(*aabb)
             }
         return link_info
 
@@ -476,6 +477,7 @@ class Robot:
         self.move_arm_to_max_height()
         self.max_height_joint_states = self.link_state_detector.get_current_link_info()
         self.move_arm_joints_to_contracted_position()
+        self.obj_aabbs = get_all_obj_aabb(p)
 
     def get_observation(self):
         camera_link_pos = self.p.getLinkState(self.robotId,self.camera_index)[0]
@@ -658,7 +660,7 @@ class Robot:
 
             self.p.setJointMotorControl2(self.robotId, arm_index, 
                                         self.p.POSITION_CONTROL, targetPosition=joint_lower_limit)
-            for _ in range(0, 20):
+            for _ in range(0, 5):
                 time.sleep(1/240)
                 self.p.stepSimulation()
         return

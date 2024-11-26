@@ -138,9 +138,18 @@ def keyboard_control():
 
 
 
+ 
+
 # test for problem area
 # (3.1327990508778294, -0.4171208854914503, 0.0857998984358789) - end state near drawer
-#p.resetBasePositionAndOrientation(mobot.robotId, (1.534303157375897, -2.8175246336552509, 0.035), [0, 0, 0, 1])
+p.resetBasePositionAndOrientation(mobot.robotId, (1.534303157375897, -2.8175246336552509, 0.035), [0, 0, 0, 1])
+target_orn = p.getQuaternionFromEuler([0, 0, np.pi/4])
+#p.resetBasePositionAndOrientation(mobot.robotId, (1.534303157375897, -2.8175246336552509, 0.035), target_orn)
+
+
+
+
+
 #p.resetBasePositionAndOrientation(mobot.robotId, (3.1327990508778294, -0.4171208854914503, 0.0857998984358789), [0, 0, 0, 1])
 
 #p.resetBasePositionAndOrientation(mobot.robotId, 
@@ -158,6 +167,7 @@ constraint = None
 navi_flag = False
 grasp_flag = False
 gripped = False
+mobot.obj_aabbs = get_all_obj_aabb(p)
 grasper = Grasp(p, objects_dict, mobot)
 
 while (1):

@@ -1,6 +1,6 @@
 from .astar_global_planner import NavMap, AStarNode, Node
 from navigation.ee_planner import CollisionChecker
-from simulation.stretch import Robot
+from simulation.stretch import Robot, LinkStateDetector
 from utils.tools import get_robot_base_pose
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,7 +9,7 @@ import heapq
 import numpy as np
 import matplotlib.pyplot as plt
 import heapq
-
+import traceback
 
 class PointPlanner(NavMap):
 
@@ -21,6 +21,10 @@ class PointPlanner(NavMap):
             mobot.compressed_joint_states,
             mobot.stretched_joint_states
         )
+        self.link_state_detector = LinkStateDetector(
+            p, self.mobot.robotId
+        )
+        self.current_link_info = self.link_state_detector.get_current_link_info()
         super().__init__(p, *args, **kwargs)
 
     def grid_to_world(self, grid_x, grid_y):
@@ -44,7 +48,7 @@ class PointPlanner(NavMap):
         
         # Penalty for proximity to obstacles
         penalty = 0
-        proximity_threshold = 3  # Number of grid cells considered 'near' an obstacle
+        proximity_threshold = 2  # Number of grid cells considered 'near' an obstacle
         
         for i in range(-proximity_threshold, proximity_threshold + 1):
             for j in range(-proximity_threshold, proximity_threshold + 1):
@@ -68,10 +72,10 @@ class PointPlanner(NavMap):
 
         # Define the four possible configurations to check
         configurations = [
-            ((-1,1), (-1, 2)),
-            ((-1,1), (-2, 1)),
-            ((-1,2), (-1, 1)),
-            ((-2,1), (-1, 1))
+            ((-2,2), (-2, 3)),
+            ((-2,2), (-3, 2)),
+            ((-2,3), (-2, 2)),
+            ((-3,2), (-2, 2))
         ]
 
         # Assume the grid is free unless all configurations have collisions
@@ -172,11 +176,13 @@ class PointPlanner(NavMap):
 
                 # Check if available for robot to move
                
-                if consider_radius:
-                    if self.is_occupied_range(new_x, new_y, goal_point, robot_id, self.base_z_range):
-                        continue  
-                else:
-                    if self.is_occupied(new_x, new_y, goal_point, robot_id, self.base_z_range):
+                # if consider_radius:
+                #     if self.is_occupied_range(new_x, new_y, goal_point, robot_id, self.base_z_range):
+                #         continue  
+                # else:
+                #     if self.is_occupied(new_x, new_y, goal_point, robot_id, self.base_z_range):
+                #         continue
+                if self.is_occupied(new_x, new_y, goal_point, robot_id, self.base_z_range):
                         continue
                 
                 # If node is new or has a better path, add it to the open set
@@ -195,24 +201,25 @@ class PointPlanner(NavMap):
             self.visualize_astar(None, robot_id, goal_point, visited.keys())
         return None
     
-    def collision_detected(self, world_x, world_y):
-        current_base_pos = get_robot_base_pose(self.p, self.mobot.robotId)[0]
-        target_base_pos = [world_x, world_y, current_base_pos[2]]
-        quaternions = [
-            [0, 0, 0, 1],         # 0 degrees
-            # [0, 0, 0.7071, 0.7071],   # 90 degrees
-            # [0, 0, 1, 0],         # 180 degrees
-            # [0, 0, -0.7071, 0.7071]   # 270 degrees (-90 degrees)
-        ]
-        print("Before for loop collision")
-        collisions = []
-        for orn in quaternions:
-
-            collisions.append(
-                self.collision_checker.check_basic_collision_at_position_orientation(
+    def collision_detected(self, world_x, world_y, obj_id):
+        try:
+            current_base_pos = get_robot_base_pose(self.p, self.mobot.robotId)[0]
+            target_base_pos = [world_x, world_y, current_base_pos[2]]
+            quaternions = [
+                [0, 0, 0, 1],         # 0 degrees
+                [0, 0, 0.7071, 0.7071],   # 90 degrees
+                [0, 0, 1, 0],         # 180 degrees
+                [0, 0, -0.7071, 0.7071]   # 270 degrees (-90 degrees)
+            ]
+            collisions = []
+            for orn in quaternions:
+                collisions.append(self.collision_checker.check_basic_collision_at_position_orientation_object(
                     target_base_pos,
-                    orn
-                ))
+                    orn, obj_id, current_link_info=self.current_link_info))
+        except Exception:
+            traceback.print_exc()
+            
+                
         
         #Even if there is a specific orientation where there is no collision return False
         return all(value is True for value in collisions)
@@ -231,6 +238,7 @@ class PointPlanner(NavMap):
         if 0 <= x < self.grid_size_x and 0 <= y < self.grid_size_y:
             node = self.map[x][y]
             objects_in_cell = node.get_objects()
+            world_x, world_y = self.grid_to_world(x, y)
             # No specific IDs or goal point provided, universal occupation check
             if goal_point is None and robot_id is None:
                 return bool(objects_in_cell)
@@ -244,9 +252,10 @@ class PointPlanner(NavMap):
                 if "wall" in obj_name:
                     return True
                 
-                
                 if not (robot_max_z <= obj_min_z or robot_min_z >= obj_max_z):
                     return True
+                # if self.collision_detected(world_x, world_y, obj_id):
+                #     return True
             
             # Check if the goal point coincides with the cell
             if goal_point:

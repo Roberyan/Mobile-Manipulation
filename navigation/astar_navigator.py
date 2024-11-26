@@ -36,6 +36,14 @@ class RobotNavigator:
             radius=self.nav_map.grid_resolution*0.2,
             rgbaColor=[1, 1, 0, 1]  # Bright orange color for start points
         )
+        yellow_color = [1.0, 1.0, 0.0, 1.0]  
+
+
+        self.random_pt_id = p.createVisualShape(
+            shapeType=p.GEOM_SPHERE,  
+            radius=self.nav_map.grid_resolution*0.2,               
+            rgbaColor=yellow_color    
+        )
 
         self.collision_free_obj_ids = [self.nav_map.objects_dict['plane'], self.robot.robotId, aim_obj_id]
         self.nav_path_visualize_ids = []
@@ -353,23 +361,23 @@ class RobotNavigator:
             current_angle_diff = self.get_angle_diff(angle_to_aim)
 
             # Adjust speed for smoother turning as we get closer to the target angle
-            if abs(current_angle_diff) < 0.2:
-                smooth_turn_speed = self.turn_speed * 0.5
+            if abs(current_angle_diff) > 0.2:
+                smooth_turn_speed = self.turn_speed * 0.3
             elif abs(current_angle_diff) < 0.1:
-                smooth_turn_speed = self.turn_speed * 0.2
+                smooth_turn_speed = self.turn_speed * 0.1
             else:
                 smooth_turn_speed = self.turn_speed
 
             # Stop rotating if within tolerance of target angle
             if abs(current_angle_diff) <= 0.02:
                 base_control(self.robot, self.p, forward=0, turn=0)
-                print("Aligned with target direction.")
+                #print("Aligned with target direction.")
                 return True
 
             # Check if rotation time is too long, preventing redundancy
             if time.time() - start_time > turn_time_estimate:
                 base_control(self.robot, self.p, forward=0, turn=0)
-                print("Rotation completed due to time limit.")
+                #print("Rotation completed due to time limit.")
                 return False
 
             # Rotate the robot at the adjusted speed
@@ -398,10 +406,18 @@ class RobotNavigator:
     # follow planned path
     def move_according_to_path(self):
         self.move_arm_to_base()
+        max_retries = 10
         while self.world_path:
-            aim_x, aim_y = self.mode_decide(self.world_path[0])
+            aim_tuple = self.mode_decide(self.world_path[0])
+            if not aim_tuple and max_retries > 0:
+                max_retries-=1
+                continue
+            if not aim_tuple and max_retries <=0 :
+                break
+            max_retries = 10
+            aim_x, aim_y = aim_tuple
             self.exploring_id = self.visualize_sampled_points((aim_x, aim_y))
-
+            print("reverse_mode", self.reverse_move)
             # real action part
             while True:
                 try:
@@ -420,7 +436,7 @@ class RobotNavigator:
                         base_control(self.robot, self.p, forward=0, turn=0)
                         break
                     
-                    print("Moving...")
+                    #print("Moving...")
                     base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
                     self.freeze_arm()
                 except Exception:
@@ -430,6 +446,12 @@ class RobotNavigator:
             self.remove_sampled_points(self.exploring_id)
             self.world_path.pop(0)
             self.p.removeBody(self.nav_path_visualize_ids.pop(0))
+
+        while(self.world_path):
+            self.remove_sampled_points(self.exploring_id)
+            self.world_path.pop(0)
+            self.p.removeBody(self.nav_path_visualize_ids.pop(0))
+
         
         print("Goal object should be nearby.")
 

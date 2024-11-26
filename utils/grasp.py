@@ -1,7 +1,7 @@
 
 import time
-from utils.tools import attach, get_robot_ee_pose, get_robot_base_pose, smoothly_rotate_arm_to_position
-from navigation.astar_navigator import RobotNavigator
+from utils.tools import *
+from navigation.collision_detecting_navigator import CollisionDetectingNavigator
 from navigation.point_planner import PointPlanner
 from navigation.ee_planner import RobotEndEffectorPlanner, CollisionChecker
 from simulation.stretch import Robot
@@ -14,12 +14,13 @@ class Grasp:
         self.movable_joints = mobot.get_movable_joints()
         self.simulation_step = 30
         self.mobot = mobot
-        self.nav_map = PointPlanner(mobot, self.p, self.mobot.robotId, objects_dict, grid_resolution=0.11)
+        self.nav_map = PointPlanner(mobot, self.p, self.mobot.robotId, objects_dict, grid_resolution=0.15)
         self.objects_dict = objects_dict
         self.collision_checker = CollisionChecker(self.p, mobot, 
                                                   mobot.compressed_joint_states, 
                                                   mobot.stretched_joint_states)
         
+    
 
     def set_joint_positions(self, joint_indices, joint_positions, force=None, move_wheels=False):
     # assert len(joint_positions) == len(movable_joints), "Mismatch in number of positions and movable joints"
@@ -76,7 +77,7 @@ class Grasp:
         astar_path = self.nav_map.get_astar_map(self.mobot.robotId, goal_point=goal_position) # astar planning from robot's position to goal position
         if astar_path is not None:
             # nav_map.visualize_astar(astar_path, mobot.robotId, goal_id) # show 2d astar map with planned path    
-            navigator = RobotNavigator(self.p, self.mobot, self.nav_map, astar_path, None) # navigator to move robot
+            navigator = CollisionDetectingNavigator(self.p, self.mobot, self.nav_map, astar_path, None) # navigator to move robot
             navigator.show_path_in_world() # show planned path in simulation env
             navigator.move_according_to_path() # move according to planned path
 
@@ -119,7 +120,7 @@ class Grasp:
             
             if astar_path_pickup is not None:
                 # nav_map.visualize_astar(astar_path, mobot.robotId, goal_id) # show 2d astar map with planned path    
-                navigator = RobotNavigator(self.p, self.mobot, self.nav_map, astar_path_pickup, None) # navigator to move robot
+                navigator = CollisionDetectingNavigator(self.p, self.mobot, self.nav_map, astar_path_pickup, None) # navigator to move robot
                 navigator.show_path_in_world() # show planned path in simulation env
                 navigator.move_according_to_path() # move according to planned path
 

@@ -5,8 +5,56 @@ import time
 import traceback
 from utils.tools import *
 from simulation.stretch import Robot
-from simulation.stretch import LinkStateDetector, ArmMovementDirection
-import operator
+from simulation.stretch import LinkStateDetector
+import random
+
+def check_no_intersection(cuboid1_points, cuboid2_points):
+    """
+    Checks if two cuboids do NOT intersect using the Separating Axis Theorem (SAT).
+
+    :param cuboid1_points: List of 8 3D points representing the first cuboid.
+    :param cuboid2_points: List of 8 3D points representing the second cuboid.
+    :return: True if the cuboids do NOT intersect, False otherwise.
+    """
+    # Convert points to numpy arrays
+    cuboid1_points = np.array(cuboid1_points)
+    cuboid2_points = np.array(cuboid2_points)
+    
+    # Get edges from 8 corner points of the cuboid
+    def get_edges(points):
+        # Only edges along principal directions
+        edges = [
+            points[1] - points[0],  # Edge from point 0 to 1
+            points[3] - points[0],  # Edge from point 0 to 3
+            points[4] - points[0]   # Edge from point 0 to 4
+        ]
+        return np.array(edges)
+
+    # Get face normals (axes of separation)
+    edges1 = get_edges(cuboid1_points)
+    edges2 = get_edges(cuboid2_points)
+    
+    axes = []
+    axes.extend(edges1)  # Normals of cuboid1 faces
+    axes.extend(edges2)  # Normals of cuboid2 faces
+    axes.extend([np.cross(e1, e2) for e1 in edges1 for e2 in edges2])  # Cross products
+    
+    # Normalize axes and filter out near-zero vectors
+    axes = [axis / np.linalg.norm(axis) for axis in axes if np.linalg.norm(axis) > 1e-6]
+    
+    # Project points of cuboids onto each axis and check for disjoint projections
+    def project(points, axis):
+        projections = np.dot(points, axis)
+        return np.min(projections), np.max(projections)
+
+    for axis in axes:
+        min1, max1 = project(cuboid1_points, axis)
+        min2, max2 = project(cuboid2_points, axis)
+        # Check if projections are disjoint
+        if max1 < min2 or max2 < min1:
+            return True  # Found a separating axis, cuboids do NOT intersect
+
+    return False
 
 class CollisionChecker:
     def __init__(self, p, mobot: Robot, compressed_states=None, stretched_states=None):
@@ -20,40 +68,73 @@ class CollisionChecker:
 
     def get_link_info_at_target(self, target_base_position, current_link_info):
         target_link_info = {}
-        current_base_position = get_robot_base_pose(self.p, self.robot_id)[0]
+        current_base_position, current_orn, _ = get_robot_base_pose(self.p, self.robot_id)[0]
         for link_idx in current_link_info:
             aabb = current_link_info[link_idx]['aabb']
+            vertices = current_link_info[link_idx]['vertices']
             new_aaab = translate_aabb(aabb, current_base_position, target_base_position)
+            new_vertices = transform_points(vertices, current_base_position, current_orn, target_base_position, current_orn)
             target_link_info[link_idx] = {
-                'aabb': new_aaab
+                'aabb': new_aaab,
+                'vertices': new_vertices
             }
         return target_link_info
 
     
     def get_link_info_at_target_with_orientation(self, target_base_position, target_base_ori, current_link_info):
         target_link_info = {}
-        current_base_state = get_robot_base_pose(self.p, self.robot_id)
-        current_base_pos = current_base_state[0]
-        current_base_orn = current_base_state[1]
+        current_base_state = current_link_info[self.link_state_detector.base_index]
+        current_base_pos = current_base_state['link_pos']
+        current_base_orn = current_base_state['link_orientation']
         for link_idx in current_link_info:
+            vertices = current_link_info[link_idx]['vertices']
             aabb = current_link_info[link_idx]['aabb']
-            new_aaab = transform_aabb(aabb, current_base_pos, current_base_orn, 
+            new_points = transform_points(vertices, current_base_pos, current_base_orn, 
+                                      target_base_position, target_base_ori)
+            new_aabb = transform_aabb(aabb, current_base_pos, current_base_orn, 
                                       target_base_position, target_base_ori)
             target_link_info[link_idx] = {
-                'aabb': new_aaab
+                'vertices': new_points,
+                'aabb': new_aabb
             }
         return target_link_info
     
-    def is_colliding(self, target_link_info):
+    def is_colliding_vertices(self, target_link_info):
         for link_idx in target_link_info:
-            overlapping_objects = self.p.getOverlappingObjects(*target_link_info[link_idx]['aabb'])
-            if overlapping_objects and len(overlapping_objects) > 0:
-                for object_id in overlapping_objects:
-                    if object_id == self.robot_id:
-                        continue
-                return True
+            obj_aabbs = self.mobot.obj_aabbs
+            for obj_id in obj_aabbs:
+                if obj_id[0] == self.mobot.robotId:
+                    continue
+                obj_vertices = np.array(obj_aabbs[obj_id]['vertices'])
+                link_vertices = np.array(target_link_info[link_idx]['vertices'])
+                #self.visualize_obj_points(obj_vertices)
+                if not check_no_intersection(obj_vertices, link_vertices):
+                    return True
         return False
     
+    def is_colliding(self, target_link_info, aabb=True, vertices=False):
+        if aabb:
+            for link_idx in target_link_info:
+                overlapping_objects = self.p.getOverlappingObjects(*target_link_info[link_idx]['aabb'])
+                if overlapping_objects and len(overlapping_objects) > 0:
+                    for object_id, link_id in overlapping_objects:
+                        if object_id == self.robot_id or object_id > 22:
+                            continue
+                        else:
+                            return True
+        if vertices:
+            return self.is_colliding_vertices(target_link_info)
+        return False
+    
+    def is_colliding_object(self, target_link_info, obj_id):
+        obj_aabb = get_obj_aabb(self.p, obj_id)
+
+        for link_idx in target_link_info:
+            link_aabb = target_link_info[link_idx]['aabb']
+            if check_aabb_overlap(link_aabb, obj_aabb):
+                return True
+        return False
+
     def get_arm_movement_aabbs(self, target_arm_position, current_link_info):
         movement_aabbs = {}
         for link_idx in self.link_state_detector.arm_movement_indices:
@@ -74,8 +155,10 @@ class CollisionChecker:
                 target_base_position, target_base_ori, current_link_info)
         return self.is_colliding(target_link_info)
     
-    def check_basic_collision_at_position_orientation(self, target_base_position, target_base_ori):
-        current_link_info = self.link_state_detector.get_current_link_info()
+    def get_basic_link_info_orientation(self, target_base_position, target_base_ori, current_link_info=None):
+        if not current_link_info:
+            #current_link_info = self.link_state_detector.get_current_link_info()
+            current_link_info = self.mobot.compressed_joint_states
         detector = self.link_state_detector
         new_current_link_info = {
             detector.base_index: current_link_info[detector.base_index],
@@ -85,7 +168,61 @@ class CollisionChecker:
         }
         target_link_info = self.get_link_info_at_target_with_orientation(
                 target_base_position, target_base_ori, new_current_link_info)
-        return self.is_colliding(target_link_info)
+        return target_link_info
+
+    def visualize_aabb(self, target_link_info):
+        all_v = []
+        for link_idx in target_link_info:
+            v_shapes = visualize_aabb_filled(p, target_link_info[link_idx]['aabb'], 
+                                color=[random.uniform(0,1), random.uniform(0,1), random.uniform(0,1), 0.3])
+            all_v.extend(v_shapes)
+            self.p.stepSimulation()
+        remove_visual_shapes(self.p, all_v)
+    
+    def visualize_obj_points(self, points):
+        pts = visualize_points(p, points, 
+                                color=[random.uniform(0,1), random.uniform(0,1), random.uniform(0,1), 1])
+        self.p.stepSimulation()
+        time.sleep(1/240)
+        time.sleep(2)
+        remove_visual_shapes(self.p, pts)
+
+    def visualize_points(self, target_link_info):
+        all_v = []
+        for link_idx in target_link_info:
+            v_shapes = visualize_points(p, target_link_info[link_idx]['vertices'], 
+                                color=[random.uniform(0,1), random.uniform(0,1), random.uniform(0,1), 0.3])
+            all_v.extend(v_shapes)
+            self.p.stepSimulation()
+        return all_v
+        
+
+    def check_basic_collision_at_position_orientation_object(
+            self, target_base_position, target_base_ori, obj_id, current_link_info=None):
+        target_link_info = self.get_basic_link_info_orientation(target_base_position, target_base_ori, current_link_info)
+        return self.is_colliding_object(target_link_info, obj_id)
+
+    def check_basic_collision_at_position_orientation(self, target_base_position, target_base_ori):
+        target_link_info = self.get_basic_link_info_orientation(target_base_position, target_base_ori)
+        all_v = self.visualize_points(target_link_info)
+        is_colliding =  self.is_colliding(target_link_info, aabb=False, vertices=True)
+        if all_v:
+            remove_visual_shapes(self.p, all_v)
+        return is_colliding
+    
+    def check_basic_collision_at_position(self, target_base_position):
+        current_link_info = self.link_state_detector.get_current_link_info()
+        detector = self.link_state_detector
+        new_current_link_info = {
+            detector.base_index: current_link_info[detector.base_index],
+            detector.vertical_link_index: current_link_info[detector.vertical_link_index],
+            detector.top_link_index: current_link_info[detector.top_link_index]
+            
+        }
+        target_link_info = self.get_link_info_at_target(
+                target_base_position, new_current_link_info)
+        self.visualize_points(target_link_info)
+        return self.is_colliding(target_link_info, aabb=False, vertices=True)
     
 
     def check_collision_max_height(self, target_base_position, target_base_orn):
@@ -171,7 +308,7 @@ class CollisionChecker:
 
 class RobotEndEffectorPlanner:
     def __init__(self, p, mobot, objects_dict, movable_joints, target_object_id=None, 
-                 max_reachable_distance=None, max_height = None):
+                 max_reachable_distance=None, max_height = None,):
         self.p = p
         self.mobot = mobot
         self.robot_id = mobot.robotId
