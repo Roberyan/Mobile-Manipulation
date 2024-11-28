@@ -114,6 +114,7 @@ class CollisionChecker:
     
     def is_colliding(self, target_link_info, aabb=True, vertices=False):
         if aabb:
+            self.visualize_aabb(target_link_info)
             for link_idx in target_link_info:
                 overlapping_objects = self.p.getOverlappingObjects(*target_link_info[link_idx]['aabb'])
                 if overlapping_objects and len(overlapping_objects) > 0:
@@ -418,7 +419,7 @@ class RobotEndEffectorPlanner:
     #     ]
     #     return not any(collisions)
  
-    def generate_search_configurations(self, target_point, max_num=10):
+    def generate_search_configurations(self, target_point, distance_to_target, max_num=2):
         """
         Generate random points within a circle centered at target_point with given radius in XY plane.
         Points maintain the same Z coordinate as current_point.
@@ -433,7 +434,6 @@ class RobotEndEffectorPlanner:
         Returns:
             np.array: Array of points sorted by distance from current_point
         """
-        current_position_collision_free = False
         # Convert points to numpy arrays if they aren't already
         current_point = get_robot_base_pose(self.p, self.robot_id)[0]
         current_point = np.array(current_point)
@@ -442,24 +442,16 @@ class RobotEndEffectorPlanner:
         # Generate random angles and distances from center
         theta = np.random.uniform(0, 2*np.pi, max_num)
         # Subtracting a constant so the radius is always less than the maximum
-        r = np.random.uniform(0, self.max_reachable_distance-0.03, max_num)
+        r = np.random.uniform(0, distance_to_target, max_num)
         
         # Generate points in XY plane
-        x = target_point[0] + r * np.cos(theta)
-        y = target_point[1] + r * np.sin(theta)
+        x = current_point[0] + r * np.cos(theta)
+        y = current_point[1] + r * np.sin(theta)
         z = np.full(max_num, current_point[2])  # Keep same Z as current_point
         
         # Stack coordinates to create points
         points = np.column_stack((x, y, z))
         
-        # Add current_point if it's within the circle
-        dist_current_to_target = np.linalg.norm(current_point[:2] - target_point[:2])
-        
-        if dist_current_to_target <= self.max_reachable_distance:
-            current_position_collision_free = True
-        else:
-            print(f"""Cannot reach from current point max_reachable {self.max_reachable_distance} 
-                  distance to target {dist_current_to_target}""")
         
         # Calculate distances from current_point to all generated points
         distances = np.array([np.linalg.norm(p - current_point) for p in points])
@@ -468,9 +460,9 @@ class RobotEndEffectorPlanner:
         sorted_indices = np.argsort(distances)
         sorted_points = points[sorted_indices]
         
-        return current_position_collision_free, sorted_points
+        return sorted_points
     
-    def plan_end_effector_path(self, target_position, max_attempts=20):
+    def plan_end_effector_path(self, target_position):
         """
         Plan collision-free path for end effector
         
@@ -483,28 +475,30 @@ class RobotEndEffectorPlanner:
             bool: Success of path planning
         """
         possible_end_positions = []
+        current_point = get_robot_base_pose(self.p, self.robot_id)[0]
+        dist_current_to_target = np.linalg.norm(np.array(current_point[:2]) - np.array(target_position[:2]))
+        
+        if dist_current_to_target <= self.max_reachable_distance:
+            print("Current position is good enough")
+            return None
+        
         if target_position[2] > self.max_height:
             print("Cannot reach - too high")
             return None
-        for attempt in range(max_attempts):
-            try:
-                # Generate search configurations
-                current_position_collision_free, configurations = self.generate_search_configurations(
-                    target_position
-                )
-                if current_position_collision_free:
-                    print("Current position is good enough")
-                    return None
-                
-                for base_pos in configurations:
-                    
-                    # Check collision
-                    if not self.collision_checker.check_collision_arm_movement(base_pos, target_position):
-                        possible_end_positions.append(base_pos)
+        to_target_dist = self.max_reachable_distance - dist_current_to_target
+        
+        try:
+            # Generate search configurations
+            configurations = self.generate_search_configurations(
+                target_position, to_target_dist
+            )
             
-            except Exception as e:
-                traceback.print_exc()
-                print(f"Planning attempt {attempt + 1} failed: {e}")
+            for base_pos in configurations:
+                # Check collision
+                if not self.collision_checker.check_collision_arm_movement(base_pos, target_position):
+                    possible_end_positions.append(base_pos)
+        except Exception as e:
+            traceback.print_exc()
         if not possible_end_positions:
             print("Cannot find good collision free point")
             return None

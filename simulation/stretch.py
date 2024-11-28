@@ -179,8 +179,9 @@ def init_scene(p, mug_random=False):
     bed_c = p.createCollisionShape(p.GEOM_BOX, halfExtents=[bed_depth / 2.0, bed_width / 2.0,
                                                                            bed_height / 2.0])
     mass = 0
+    bed_position = (bed_depth / 2.0 + 1.9, -1.45, bed_height / 2.0)
     bed_id = p.createMultiBody(mass, baseCollisionShapeIndex=bed_c, baseVisualShapeIndex=bed_v,
-                                          basePosition=(bed_depth / 2.0 + 1.9, -1.45, bed_height / 2.0))
+                                          basePosition=bed_position)
     bed_color = [128 / 255.0, 128 / 255.0, 128 / 255.0, 1.0]
     p.changeVisualShape(bed_id, -1, rgbaColor=bed_color)
     object_dict['bed'] = bed_id
@@ -246,7 +247,7 @@ def init_scene(p, mug_random=False):
     #p.changeDynamics(bottle_id, -1, contactStiffness=0.1, contactDamping=0.1)
     object_dict['bottle'] = bottle_id
 
-    bowl_position = [0.4, -0.6, table_z + 0.15]
+    bowl_position = [0.4, -0.3, table_z + 0.15]
     bowl_scaling = 0.2
     bowl_orientation = p.getQuaternionFromEuler([.0, 0.0, 0.0])
     bowl_id = p.loadURDF(os.path.join(urdf_dir, "obj_libs/bowls/b1/model.urdf"), \
@@ -259,43 +260,63 @@ def init_scene(p, mug_random=False):
     bowl_height = bowl_AABB[1][2] - bowl_AABB[0][2]
     bowl_position[2] = table_z + bowl_height / 2.0
     p.resetBasePositionAndOrientation(bowl_id, bowl_position, bowl_orientation)
-    obj_friction_ceof = 2000.0
+    obj_friction_ceof = 4000.0
 
     p.changeDynamics(bowl_id, -1, lateralFriction=obj_friction_ceof)
     p.changeDynamics(bowl_id, -1, rollingFriction=obj_friction_ceof)
     p.changeDynamics(bowl_id, -1, spinningFriction=obj_friction_ceof)
-    p.changeDynamics(bowl_id, -1, mass=0.2)
+    p.changeDynamics(bowl_id, -1, mass=0.01)
     #p.changeDynamics(self.bowl_id, -1, linearDamping=20.0)
     #p.changeDynamics(self.bowl_id, -1, angularDamping=20.0)
     #p.changeDynamics(self.bowl_id, -1, contactStiffness=0.9, contactDamping=0.9)
     object_dict['bowl'] = bowl_id
     
-    mug_position = [0.25, -0.93, 1.53]
+    mug_position = (3.4, -2.18, 2)
     mug_orientation = p.getQuaternionFromEuler([np.pi / 2.0, 0, np.pi - np.pi / 2.0])
-    mug_scaling = 0.2
-    mug_id = p.loadURDF(fileName=os.path.join(urdf_dir, "obj_libs/mugs/m2/model.urdf"),
+    mug_scaling = 0.25
+    mug_id = p.loadURDF(fileName=os.path.join(urdf_dir, "obj_libs/mugs/m1/model.urdf"),
                                  useFixedBase=False,
                                  globalScaling=mug_scaling,
                                  basePosition=mug_position,
                                  baseOrientation=mug_orientation)
-    # self.p.changeVisualShape(self.mug_id, -1, rgbaColor=[1.,1.,1.0,1])
+    p.changeVisualShape(mug_id, -1, rgbaColor=[1, 0, 0, 1])
     obj_friction_ceof = 4000.0
-    p.changeDynamics(mug_id, -1, lateralFriction=obj_friction_ceof)
-    p.changeDynamics(mug_id, -1, rollingFriction=obj_friction_ceof)
-    p.changeDynamics(mug_id, -1, spinningFriction=obj_friction_ceof)
+    p.changeDynamics(mug_id, -1, lateralFriction=0.1, spinningFriction=0.1)
     p.changeDynamics(mug_id, -1, mass=0.01)
     object_dict['mug'] = mug_id
 
-    trashbin_position = [-1.1, -4.01, 0.48]
-    trashbin_scaling = 1.0
-    trashbin_orientation = p.getQuaternionFromEuler([np.pi / 2.0, 0.0, np.pi / 2.0])
-    trashbin_id = p.loadURDF(fileName=os.path.join(urdf_dir, "obj_libs/trashbins/t2/model.urdf"), \
-                                    useFixedBase=False,
-                                    basePosition=trashbin_position, \
-                                    baseOrientation=trashbin_orientation, \
-                                    globalScaling=trashbin_scaling)
-    p.changeVisualShape(trashbin_id, -1, rgbaColor=[200 / 255., 179 / 255., 179 / 255., 1])
-    object_dict['trashbin'] = trashbin_id
+
+    mug_position = [0.75, -0.87, table_z + 0.15]
+    mug_orientation = p.getQuaternionFromEuler([np.pi / 2.0, 0, np.pi - np.pi / 2.0])
+    mug_scaling = 0.25
+    mug_id = p.loadURDF(fileName=os.path.join(urdf_dir, "obj_libs/mugs/m1/model.urdf"),
+                                 useFixedBase=False,
+                                 globalScaling=mug_scaling,
+                                 basePosition=mug_position,
+                                 baseOrientation=mug_orientation)
+    p.changeVisualShape(mug_id, -1, rgbaColor=[0, 0, 1, 1])
+    obj_friction_ceof = 4000.0
+    p.changeDynamics(mug_id, -1, lateralFriction=0.1, spinningFriction=0.1)
+    p.changeDynamics(mug_id, -1, mass=0.01)
+    object_dict['mug_blue'] = mug_id
+
+    basket_position = [-1, -4.69, 0.48]
+    basket_scaling = 0.6
+    basket_orientation = p.getQuaternionFromEuler([np.pi / 2.0, 0.0, np.pi / 2.0])
+    basket_id = p.loadURDF(fileName=os.path.join(urdf_dir, "obj_libs/trashbins/t2/model.urdf"), \
+                                    useFixedBase=True,
+                                    basePosition=basket_position, \
+                                    baseOrientation=basket_orientation, \
+                                    globalScaling=basket_scaling)
+    p.changeVisualShape(basket_id, -1, rgbaColor=[200 / 255., 179 / 255., 179 / 255., 1])
+    obj_friction_ceof = 4000.0
+    p.changeDynamics(basket_id, -1, lateralFriction=obj_friction_ceof)
+    p.changeDynamics(basket_id, -1, rollingFriction=obj_friction_ceof)
+    p.changeDynamics(basket_id, -1, spinningFriction=obj_friction_ceof)
+    p.changeDynamics(basket_id, -1, mass=1)
+    p.resetBasePositionAndOrientation(basket_id, basket_position, basket_orientation)
+
+    object_dict['basket'] = basket_id
 
     pan_position = [0.35, .2, table_z + 0.05]
     pan_scaling = 0.6
@@ -344,7 +365,7 @@ def init_scene(p, mug_random=False):
     obj_friction_ceof = 4000.0
     p.changeDynamics(mug_id, -1, lateralFriction=obj_friction_ceof)
     p.changeDynamics(mug_id, -1, mass=0.01)
-    # mug id: 21
+    # mug id: 22
     
     for _ in range(20):
         p.stepSimulation()
@@ -381,6 +402,8 @@ def base_control(robot, p, forward=0, turn=0):
     p.setJointMotorControl2(robot.robotId,3,p.VELOCITY_CONTROL,targetVelocity=turn,force=1000)
     p.setJointMotorControl2(robot.robotId,1,p.VELOCITY_CONTROL,targetVelocity=x_forward,force=1000)
     p.setJointMotorControl2(robot.robotId,2,p.VELOCITY_CONTROL,targetVelocity=y_forward,force=1000)
+    time.sleep(1. / 240.)
+    p.stepSimulation()
     
 def arm_control(robot, p, up=0, stretch=0, roll=0, yaw=0):
     # up and down
@@ -636,7 +659,7 @@ class Robot:
         end_effector_position = get_robot_ee_pose(p, robot_id)[0]  # Position of the last link (end effector)
 
         # Compute the linear distance from the base to the end-effector
-        base_position = p.getBasePositionAndOrientation(robot_id)[0] # Get the base position (XYZ)
+        base_position = get_robot_base_pose(p, robot_id)[0] # Get the base position (XYZ)
         print(f"{base_position} {end_effector_position}")
         end_effector_xy = np.array([end_effector_position[0], end_effector_position[1]])  # (x, y) of end effector
         base_xy = np.array([base_position[0], base_position[1]])  # (x, y) of base
@@ -655,19 +678,19 @@ class Robot:
 
         # First contracting the arm.
         # If the arm is larger than min possible then there is no collision
-        for arm_index in [*self.link_state_detector.arm_movement_indices, self.link_state_detector.lift_link_index]:
+        for arm_index in [*self.link_state_detector.arms_indices, self.link_state_detector.lift_link_index]:
             joint_lower_limit = self.p.getJointInfo(self.robotId, arm_index)[8]
 
             self.p.setJointMotorControl2(self.robotId, arm_index, 
                                         self.p.POSITION_CONTROL, targetPosition=joint_lower_limit)
-            for _ in range(0, 5):
+            for _ in range(0, 10):
                 time.sleep(1/240)
                 self.p.stepSimulation()
         return
     
 
     def contract_arm(self):
-        for arm_index in self.link_state_detector.arm_movement_indices:
+        for arm_index in self.link_state_detector.arms_indices:
             joint_lower_limit = self.p.getJointInfo(self.robotId, arm_index)[8]
 
             self.p.setJointMotorControl2(self.robotId, arm_index, 

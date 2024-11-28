@@ -436,7 +436,7 @@ class RobotNavigator:
                         base_control(self.robot, self.p, forward=0, turn=0)
                         break
                     
-                    #print("Moving...")
+                    print("Moving...")
                     base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
                     self.freeze_arm()
                 except Exception:

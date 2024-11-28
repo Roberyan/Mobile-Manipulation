@@ -276,7 +276,7 @@ def getLinkInfo(object_id):
 def getNumLinks(object_id):
     return len(getLinkInfo(object_id))
 
-def get_mug_pose(p, mug_id=21):
+def get_mug_pose(p, mug_id=22):
     position = p.getBasePositionAndOrientation(mug_id)[0]
     return position
 
@@ -292,17 +292,17 @@ def getAABB(object_id):
     
     return AABB_obj
 
-def attach(p, object_id, robot_id, ee_link_index, threshould=0.2):
+def attach(p, object_id, robot_id, link_index, threshould=0.2, check_condition=True):
     obj_position = p.getBasePositionAndOrientation(object_id)[0]
-    ee_position = p.getLinkState(robot_id, ee_link_index)[0]
+    ee_position = p.getLinkState(robot_id, link_index)[0]
 
-    if np.linalg.norm(np.array(obj_position) - np.array(ee_position)) > threshould:
-        print("Object is too far from the gripper")
+    if check_condition and np.linalg.norm(np.array(obj_position) - np.array(ee_position)) > threshould:
+        print("Object is too far")
         return None
     else:
         attached_constraint = p.createConstraint(
             parentBodyUniqueId=robot_id,
-            parentLinkIndex=ee_link_index,
+            parentLinkIndex=link_index,
             childBodyUniqueId=object_id,
             childLinkIndex=-1,
             jointType=p.JOINT_FIXED,
@@ -310,14 +310,18 @@ def attach(p, object_id, robot_id, ee_link_index, threshould=0.2):
             parentFramePosition=[0, 0, 0],
             childFramePosition=[0, 0, 0],
         )
-        print(f"Attached object id {object_id} with end-effector!")
-
+        print(f"Attached object id {object_id}!")
+        time.sleep(1/240)
+        p.stepSimulation()
         return attached_constraint
     
-def detach(attached_constraint):
+def detach(p, attached_constraint):
     if attached_constraint:
         p.removeConstraint(attached_constraint)
-        print("Detached object from the end-effector!")
+        print("Detached object!")
+    for _ in range(10):
+        p.stepSimulation()
+        time.sleep(1/240)
 
 def motion_planning_test(p, robot_id, target_position):
     current_ee_position, _, _ = get_robot_ee_pose(p, robot_id)

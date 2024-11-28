@@ -98,7 +98,7 @@ class PointPlanner(NavMap):
         return True
     
     
-    def get_astar_map(self, robot_id, goal_point, consider_radius=True, return_closest=True, visualize=True):
+    def get_astar_map(self, robot_id, goal_point, consider_radius=True, return_closest=True, visualize=False):
         """
         A* implementation to find a path from robot to a specified goal point.
         
@@ -106,14 +106,14 @@ class PointPlanner(NavMap):
         :param goal_point: Tuple of (x, y) representing the goal's center point in world coordinates.
         :param consider_radius: Boolean to consider robot's radius for collision checking.
         """
-        # Get robot's center position (from AABB)
-        base_aabb, _ = self.getAABB(robot_id)
-        min_x, min_y, _ = base_aabb[0]
-        max_x, max_y, _ = base_aabb[1]
-        robot_center = ((min_x + max_x) / 2, (min_y + max_y) / 2)
+        # # Get robot's center position (from AABB)
+        # base_aabb, _ = self.getAABB(robot_id)
+        # min_x, min_y, _ = base_aabb[0]
+        # max_x, max_y, _ = base_aabb[1]
+        robot_center = get_robot_base_pose(self.p, self.mobot.robotId)[0]
         
         # Convert world coordinates to grid coordinates
-        start_x, start_y = self.world_to_grid(robot_center)
+        start_x, start_y = self.world_to_grid(robot_center[:2])
         goal_x, goal_y = self.world_to_grid(goal_point)
         
         # Create start and goal nodes

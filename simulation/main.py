@@ -142,19 +142,33 @@ def keyboard_control():
 
 # test for problem area
 # (3.1327990508778294, -0.4171208854914503, 0.0857998984358789) - end state near drawer
-p.resetBasePositionAndOrientation(mobot.robotId, (1.534303157375897, -2.8175246336552509, 0.035), [0, 0, 0, 1])
+#p.resetBasePositionAndOrientation(mobot.robotId, (1.534303157375897, -2.8175246336552509, 0.035), [0, 0, 0, 1])
 target_orn = p.getQuaternionFromEuler([0, 0, np.pi/4])
-#p.resetBasePositionAndOrientation(mobot.robotId, (1.534303157375897, -2.8175246336552509, 0.035), target_orn)
+# p.resetBasePositionAndOrientation(mobot.robotId, (1.33, -2.8175246336552509, 0.035), [0,0,0.7071,-0.7071])
+p.resetDebugVisualizerCamera(
+    cameraDistance=7.32,  # Camera distance from target
+    cameraYaw=68.96,       # Camera yaw (rotation around the vertical axis)
+    cameraPitch=-69.06,    # Camera pitch (rotation around the horizontal axis)
+    cameraTargetPosition=[0, 0, 0]  # Camera target position (where it's looking)
+)
+#p.resetBasePositionAndOrientation(mobot.robotId,(-0.9142153472756134, -4.193985614188303, 0.37403600000000004), (0.0, 0.0, -0.23054305375680756, 0.9730621256448561))
+p.resetBasePositionAndOrientation(mobot.robotId, (3.3696472605102656, 0.5533268735036863, 0.28802700000000003), (-0.0, -0.0, 0.13132448905385274, 0.9913394366082409))
+
+p.resetBasePositionAndOrientation(18, (-1.0000000000000009, -4.619999999999997, 0.1876708836682638), [0, 1, 0, 1])
+p.resetBasePositionAndOrientation(17, (-1.2, -4.619999999999997, 0.1876708836682638), [0, 1, 0, 1])
 
 
 
 
+#resetBasePositionAndOrientation(mobot.robotId, (3.1327990508778294, -0.4171208854914503, 0.0857998984358789), [0, 0, 0, 1])
 
-#p.resetBasePositionAndOrientation(mobot.robotId, (3.1327990508778294, -0.4171208854914503, 0.0857998984358789), [0, 0, 0, 1])
+# p.resetBasePositionAndOrientation(mobot.robotId, 
+                                #   (3.663093921139152, 0.5550381406393756, 0.1415997968717578), 
+                                #   [0, 0, 1, 0])
 
-#p.resetBasePositionAndOrientation(mobot.robotId, 
-                                #   (3.563093921139152, 0.7550381406393756, 0.1415997968717578), 
-                                #   [0, 0, 0.7071, 0.7071])
+# p.resetBasePositionAndOrientation(mobot.robotId, 
+#                                   (3.4, -2.7, 0.19089074842113535), 
+#                                   [0, 0, 1, 0])
 
 
 total_driving_distance = 0
@@ -214,11 +228,32 @@ while (1):
             #     cam_id=mobot.camera_index)
             # cup_position, grasp_pose, grasp_angle = grasp_gen.generate()
             # print("Grasp model cup_position", cup_position)
-            lift_pos = grasper.lift_object(object_id=21)
-            gripped=True
+            #grasper.lift_object(object_id=21)
+            
+            # # # p.resetBasePositionAndOrientation(21, current_base, [0,0,0,1])
+            # p.resetBasePositionAndOrientation(18, current_base, [0,0,0,1])
+            # # # # grasper.attach_obj_to_link(21)
+            # grasper.attach_obj_to_link(18, link_id=0)
+            # gripped=True
+
+            obj_id = 22
+            #grasper.collect_object(object_id=obj_id)
+            # print("base_orn", get_robot_base_pose(p, mobot.robotId))
+            current_base = get_robot_base_pose(p, mobot.robotId)[0]
+
+        #Attaching object to base, resetting to not affect movement
+            p.resetBasePositionAndOrientation(obj_id, current_base, [0, 0, 0, 1])
+
+            p.stepSimulation()
+            time.sleep(1/240)
+            grasper.attach_obj_to_link(obj_id, 0)
+            time.sleep(5)
+            print("pose after pickup", get_robot_base_pose(p, mobot.robotId))
+            grasper.drop_object_at_goal(goal_obj_id=19)
+            print("base_orn after drop", get_robot_base_pose(p, mobot.robotId))
             
 
-    # grasper = Grasp(p, mobot.robotId)
+    # grasper = Grasp(p, mobot.robotId)x
     # grasper.move_arm_to_position(
     #                 mobot.robotId,
     #                 target_pos=[0.27, -0.71, 0.92],

@@ -99,51 +99,59 @@ class CollisionDetectingNavigator(RobotNavigator):
         if not current_collision:
             return True
         
+    def if_within_range(self, aim_tuple, range=1):
+        # special treat for robot base aabb measurement
+        bot_base_pose = get_robot_base_pose(self.p, self.robot.robotId)[0]
+
+        return np.linalg.norm(np.array(bot_base_pose[:2]) - np.array(aim_tuple)) <= range
+        
     def move_according_to_path(self):
-            self.move_arm_to_base()
-            while self.world_path:
-                aim_tuple = self.mode_decide(self.world_path[0])
-                if (aim_tuple is None):
-                    break
-                aim_x, aim_y = aim_tuple
-                self.exploring_id = self.visualize_sampled_points((aim_x, aim_y))
-                print("reverse_mode", self.reverse_move)
-                # real action part
-                while True:
-                    try:
-                        time.sleep(1. / 240.)
-                        self.p.stepSimulation()
-                        
-                        if self.if_within_range(self.robot.robotId, (aim_x, aim_y), 0.5):
-                            base_control(self.robot, self.p, forward=0, turn=0)
-                            break
-                        
-                        # Turn toward the target direction
-                        self.turn_to_position(aim_x, aim_y)
-                        
-                        # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
-                        if self.if_within_range(self.robot.robotId, (aim_x, aim_y)):
-                            base_control(self.robot, self.p, forward=0, turn=0)
-                            break
-                        
-                        #print("Moving...")
-                        base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
-                        self.freeze_arm()
-                    except Exception:
-                        traceback.print_exc()
-                        pass
+        self.move_arm_to_base()
+        while self.world_path:
+            aim_tuple = self.mode_decide(self.world_path[0])
+            if (aim_tuple is None):
+                break
+            aim_x, aim_y = aim_tuple
+            self.exploring_id = self.visualize_sampled_points((aim_x, aim_y))
+            print("reverse_mode", self.reverse_move)
+            # real action part
+            while True:
+                try:
+                    time.sleep(1. / 240.)
+                    self.p.stepSimulation()
                     
-                self.remove_sampled_points(self.exploring_id)
-                self.world_path.pop(0)
-                self.p.removeBody(self.nav_path_visualize_ids.pop(0))
+                    if self.if_within_range((aim_x, aim_y), 0.1):
+                        base_control(self.robot, self.p, forward=0, turn=0)
+                        break
+                    
+                    # Turn toward the target direction
+                    self.turn_to_position(aim_x, aim_y)
+                    
+                    # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
+                    if self.if_within_range((aim_x, aim_y), 0.1):
+                        base_control(self.robot, self.p, forward=0, turn=0)
+                        break
+                    
+                    #print("Moving...")
+                    base_control(self.robot, self.p, forward=self.forward_speed, turn=0)
+                    self.freeze_arm()
+                except Exception:
+                    traceback.print_exc()
+                    pass
+                
+            self.remove_sampled_points(self.exploring_id)
+            self.world_path.pop(0)
+            self.p.removeBody(self.nav_path_visualize_ids.pop(0))
 
-            while(self.world_path):
-                self.remove_sampled_points(self.exploring_id)
-                self.world_path.pop(0)
-                self.p.removeBody(self.nav_path_visualize_ids.pop(0))
+        while(self.world_path):
+            self.remove_sampled_points(self.exploring_id)
+            self.world_path.pop(0)
+            self.p.removeBody(self.nav_path_visualize_ids.pop(0))
 
-            
-            print("Goal object should be nearby.")
+        
+        print("Goal object should be nearby.")
+
+
     # decide move forward or reverse to go, currently dummy judgement
     def mode_decide(self, aim_tuple, zoom=1.5):
         
