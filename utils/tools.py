@@ -319,7 +319,7 @@ def detach(p, attached_constraint):
     if attached_constraint:
         p.removeConstraint(attached_constraint)
         print("Detached object!")
-    for _ in range(10):
+    for _ in range(20):
         p.stepSimulation()
         time.sleep(1/240)
 

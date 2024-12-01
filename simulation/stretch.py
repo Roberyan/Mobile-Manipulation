@@ -300,7 +300,7 @@ def init_scene(p, mug_random=False):
     p.changeDynamics(mug_id, -1, mass=0.01)
     object_dict['mug_blue'] = mug_id
 
-    basket_position = [-1, -4.69, 0.48]
+    basket_position = [-1, -4.65, 0.48]
     basket_scaling = 0.6
     basket_orientation = p.getQuaternionFromEuler([np.pi / 2.0, 0.0, np.pi / 2.0])
     basket_id = p.loadURDF(fileName=os.path.join(urdf_dir, "obj_libs/trashbins/t2/model.urdf"), \

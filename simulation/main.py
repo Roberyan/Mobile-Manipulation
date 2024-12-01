@@ -151,11 +151,11 @@ p.resetDebugVisualizerCamera(
     cameraPitch=-69.06,    # Camera pitch (rotation around the horizontal axis)
     cameraTargetPosition=[0, 0, 0]  # Camera target position (where it's looking)
 )
-#p.resetBasePositionAndOrientation(mobot.robotId,(-0.9142153472756134, -4.193985614188303, 0.37403600000000004), (0.0, 0.0, -0.23054305375680756, 0.9730621256448561))
-p.resetBasePositionAndOrientation(mobot.robotId, (3.3696472605102656, 0.5533268735036863, 0.28802700000000003), (-0.0, -0.0, 0.13132448905385274, 0.9913394366082409))
+p.resetBasePositionAndOrientation(mobot.robotId,(-0.9142153472756134, -4.193985614188303, 0.37403600000000004), (0.0, 0.0, -0.23054305375680756, 0.9730621256448561))
+#p.resetBasePositionAndOrientation(mobot.robotId, (3.3696472605102656, 0.5533268735036863, 0.28802700000000003), (-0.0, -0.0, 0.13132448905385274, 0.9913394366082409))
 
 p.resetBasePositionAndOrientation(18, (-1.0000000000000009, -4.619999999999997, 0.1876708836682638), [0, 1, 0, 1])
-p.resetBasePositionAndOrientation(17, (-1.2, -4.619999999999997, 0.1876708836682638), [0, 1, 0, 1])
+#p.resetBasePositionAndOrientation(17, (-1.2, -4.619999999999997, 0.1876708836682638), [0, 1, 0, 1])
 
 
 
@@ -196,29 +196,6 @@ while (1):
     total_driving_distance += np.linalg.norm(np.array(current_position) - np.array(previous_position))
     previous_position = current_position
 
-    # if navi_flag == False:
-    #     if current_position[0] > 1.6 and current_position[1] > -0.35:
-    #         print("Reached the goal region! Total driving distance: ", total_driving_distance)
-    #         navi_flag = True
-    #     else:
-    #         print("Total driving distance: ", total_driving_distance)
-    #         print("Current position: ", current_position)
-    # else:
-    #     print("Reached the goal region! Total driving distance: ", total_driving_distance)
-    
-    
-    # if grasp_flag == False:
-    #     mug_position = get_mug_pose(p)
-    #     print("Mug position: ", mug_position)
-
-    #     if mug_position[0] > 3.3 and mug_position[0] < 3.5 \
-    #         and mug_position[1] > -0.17 and mug_position[1] < 0.25 \
-    #         and mug_position[2] > 0.71 and mug_position[2] < 0.75:
-    #         print("Mug is in the drawer!")
-    #         grasp_flag = True
-    # else:
-    #     print("Mug is in the drawer!")
-
     ee_position, _, _ = get_robot_ee_pose(p, mobot.robotId)
     print("End-effector position: ", ee_position)
     for k,v in keys.items():
@@ -236,19 +213,19 @@ while (1):
             # grasper.attach_obj_to_link(18, link_id=0)
             # gripped=True
 
-            obj_id = 22
-            #grasper.collect_object(object_id=obj_id)
+            obj_id = 17
+            grasper.collect_object(object_id=obj_id)
             # print("base_orn", get_robot_base_pose(p, mobot.robotId))
             current_base = get_robot_base_pose(p, mobot.robotId)[0]
 
         #Attaching object to base, resetting to not affect movement
-            p.resetBasePositionAndOrientation(obj_id, current_base, [0, 0, 0, 1])
+            # p.resetBasePositionAndOrientation(obj_id, current_base, [0, 0, 0, 1])
 
-            p.stepSimulation()
-            time.sleep(1/240)
-            grasper.attach_obj_to_link(obj_id, 0)
-            time.sleep(5)
-            print("pose after pickup", get_robot_base_pose(p, mobot.robotId))
+            # p.stepSimulation()
+            # time.sleep(1/240)
+            # grasper.attach_obj_to_link(obj_id, 0)
+            # time.sleep(5)
+            # print("pose after pickup", get_robot_base_pose(p, mobot.robotId))
             grasper.drop_object_at_goal(goal_obj_id=19)
             print("base_orn after drop", get_robot_base_pose(p, mobot.robotId))
             

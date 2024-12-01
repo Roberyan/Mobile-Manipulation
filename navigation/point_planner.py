@@ -48,7 +48,7 @@ class PointPlanner(NavMap):
         
         # Penalty for proximity to obstacles
         penalty = 0
-        proximity_threshold = 2  # Number of grid cells considered 'near' an obstacle
+        proximity_threshold = 3  # Number of grid cells considered 'near' an obstacle
         
         for i in range(-proximity_threshold, proximity_threshold + 1):
             for j in range(-proximity_threshold, proximity_threshold + 1):

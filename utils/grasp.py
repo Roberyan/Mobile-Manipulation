@@ -72,13 +72,12 @@ class Grasp:
             time.sleep(1./240.)
 
     def move_to_closest_point(self, goal_position):
-        nav_map = PointPlanner(self.mobot, self.p, self.mobot.robotId, self.objects_dict, grid_resolution=0.15)
+        nav_map = PointPlanner(self.mobot, self.p, self.mobot.robotId, self.objects_dict, grid_resolution=0.11)
         nav_map.label_objects() # capture all objects in the env
         # nav_map.show_map() # show 2D astar map
         goal_position = [goal_position[0], goal_position[1]] # mug object
         astar_path = nav_map.get_astar_map(self.mobot.robotId, goal_point=goal_position) # astar planning from robot's position to goal position
         if astar_path is not None:
-            # nav_map.visualize_astar(astar_path, mobot.robotId, goal_id) # show 2d astar map with planned path    
             navigator = CollisionDetectingNavigator(self.p, self.mobot, nav_map, astar_path, None) # navigator to move robot
             navigator.show_path_in_world() # show planned path in simulation env
             navigator.move_according_to_path() # move according to planned path
@@ -123,7 +122,6 @@ class Grasp:
                     break
             
             if astar_path_pickup is not None:
-                # nav_map.visualize_astar(astar_path, mobot.robotId, goal_id) # show 2d astar map with planned path    
                 navigator = CollisionDetectingNavigator(self.p, self.mobot, nav_map, astar_path_pickup, None) # navigator to move robot
                 navigator.show_path_in_world() # show planned path in simulation env
                 navigator.move_according_to_path() # move according to planned path
@@ -195,7 +193,7 @@ class Grasp:
         target_center = get_aabb_center(*goal_aabb)
         
         # top points gives 4 top points of the bounding box
-        target_pos = [target_center[0]-0.15, target_center[1]-0.2, target_center[2]+0.3]
+        target_pos = [target_center[0]-0.15, target_center[1]-0.18, target_center[2]+0.3]
         
         for obj_id, constraint in self.base_attached_constraints.items():
             detach(self.p, constraint)
@@ -212,7 +210,7 @@ class Grasp:
         self.open_gripper(self.mobot.left_finger_index, self.mobot.right_finger_index)
         for obj, constraint in self.ee_attached_constraints.items():
             detach(self.p, constraint)
-            time.sleep(1)
+            time.sleep(2)
             # attach(self.p, obj_id, goal_obj_id, 
             #    0, threshould=0.3)
         time.sleep(1)
