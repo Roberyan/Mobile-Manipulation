@@ -39,7 +39,7 @@ class PointPlanner(NavMap):
         world_y = (grid_y * self.grid_resolution) + self.y_min
         return world_x, world_y
 
-    def get_heuristic(self, node1, node2, goal_id, robot_id, robot_z_range):
+    def get_heuristic(self, node1, node2, goal_position, robot_id, robot_z_range):
         """
         Calculate the heuristic (Euclidean distance) between two nodes.
         """
@@ -53,7 +53,7 @@ class PointPlanner(NavMap):
         for i in range(-proximity_threshold, proximity_threshold + 1):
             for j in range(-proximity_threshold, proximity_threshold + 1):
                 nx, ny = node1.x + i, node1.y + j
-                if 0 <= nx < self.grid_size_x and 0 <= ny < self.grid_size_y and self.is_occupied(nx, ny, goal_id, robot_id, robot_z_range):
+                if 0 <= nx < self.grid_size_x and 0 <= ny < self.grid_size_y and self.is_occupied(nx, ny, goal_position, robot_id, robot_z_range):
                     distance_to_obstacle = np.hypot(i, j)
                     node_objects = self.map[nx][ny].get_objects().keys()
                     is_wall = False
@@ -67,38 +67,9 @@ class PointPlanner(NavMap):
                         penalty += max(0, proximity_threshold - distance_to_obstacle)  # Apply higher penalty for closer obstacles
         
         return base_heuristic + penalty
-
-    def is_occupied_range(self, x, y, goal_position=None, robot_id=None, robot_z_range=None):
-
-        # Define the four possible configurations to check
-        configurations = [
-            ((-2,2), (-2, 3)),
-            ((-2,2), (-3, 2)),
-            ((-2,3), (-2, 2)),
-            ((-3,2), (-2, 2))
-        ]
-
-        # Assume the grid is free unless all configurations have collisions
-        for (x_range, y_range) in configurations:
-            not_occupied = True
-
-            # Iterate over the specified range in both x and y directions
-            for x_offset in range(x_range[0], x_range[1] + 1):
-                for y_offset in range(y_range[0], y_range[1] + 1):
-                    check_x = x + x_offset
-                    check_y = y + y_offset
-
-                    if self.is_occupied(check_x, check_y, goal_position, robot_id, robot_z_range):
-                        not_occupied = False
-                        break
-                    
-            if not_occupied:
-                return False
-
-        return True
     
     
-    def get_astar_map(self, robot_id, goal_point, consider_radius=True, return_closest=True, visualize=False):
+    def get_astar_map(self, robot_id, goal_point, consider_radius=False, return_closest=True, visualize=False):
         """
         A* implementation to find a path from robot to a specified goal point.
         
@@ -106,10 +77,6 @@ class PointPlanner(NavMap):
         :param goal_point: Tuple of (x, y) representing the goal's center point in world coordinates.
         :param consider_radius: Boolean to consider robot's radius for collision checking.
         """
-        # # Get robot's center position (from AABB)
-        # base_aabb, _ = self.getAABB(robot_id)
-        # min_x, min_y, _ = base_aabb[0]
-        # max_x, max_y, _ = base_aabb[1]
         robot_center = get_robot_base_pose(self.p, self.mobot.robotId)[0]
         
         # Convert world coordinates to grid coordinates
@@ -176,14 +143,13 @@ class PointPlanner(NavMap):
 
                 # Check if available for robot to move
                
-                # if consider_radius:
-                #     if self.is_occupied_range(new_x, new_y, goal_point, robot_id, self.base_z_range):
-                #         continue  
-                # else:
-                #     if self.is_occupied(new_x, new_y, goal_point, robot_id, self.base_z_range):
-                #         continue
-                if self.is_occupied(new_x, new_y, goal_point, robot_id, self.base_z_range):
+                if consider_radius:
+                    if self.is_occupied_range(new_x, new_y, goal_point, robot_id, self.base_z_range):
+                        continue  
+                else:
+                    if self.is_occupied(new_x, new_y, goal_point, robot_id, self.base_z_range):
                         continue
+                
                 
                 # If node is new or has a better path, add it to the open set
                 if (new_x, new_y) not in open_set or open_set[(new_x, new_y)].cost > new_node.cost:

@@ -168,7 +168,7 @@ class Grasp:
         self.close_gripper(self.mobot.left_finger_index, self.mobot.right_finger_index)
         
         
-        ee_attached_constraint = attach(self.p, object_id, self.robot_id, self.mobot.end_effector_idx, check_condition=False)
+        ee_attached_constraint = attach(self.p, object_id, self.robot_id, self.mobot.end_effector_idx)
 
         print("lifting the object")
         
@@ -211,8 +211,6 @@ class Grasp:
         for obj, constraint in self.ee_attached_constraints.items():
             detach(self.p, constraint)
             time.sleep(2)
-            # attach(self.p, obj_id, goal_obj_id, 
-            #    0, threshould=0.3)
         time.sleep(1)
         self.mobot.move_arm_to_max_height()
         self.mobot.move_arm_joints_to_contracted_position()

@@ -324,116 +324,8 @@ class RobotEndEffectorPlanner:
             self.p, mobot, 
             compressed_states = mobot.compressed_joint_states,
             stretched_states = mobot.stretched_joint_states)
-
-
-
-    # def is_object_in_plane(self, object_id, plane_points):
-    #     # Get the object's AABB (Axis-Aligned Bounding Box)
-    #     aabb_min, aabb_max = self.p.getAABB(object_id)
-        
-    #     # Get all corner points of the AABB
-    #     corners = [
-    #         [aabb_min[0], aabb_min[1], aabb_min[2]],
-    #         [aabb_min[0], aabb_min[1], aabb_max[2]],
-    #         [aabb_min[0], aabb_max[1], aabb_min[2]],
-    #         [aabb_min[0], aabb_max[1], aabb_max[2]],
-    #         [aabb_max[0], aabb_min[1], aabb_min[2]],
-    #         [aabb_max[0], aabb_min[1], aabb_max[2]],
-    #         [aabb_max[0], aabb_max[1], aabb_min[2]],
-    #         [aabb_max[0], aabb_max[1], aabb_max[2]]
-    #     ]
-        
-    #     # Check if any corner point is inside the plane
-    #     return any(
-    #         self.is_point_inside_convex_hull(plane_points, corner) 
-    #         for corner in corners
-    #     )
-
-    # def is_point_inside_convex_hull(self, hull_points, point):
-    #     # Create plane equations from the hull points
-    #     def plane_equation(p1, p2, p3):
-    #         # Calculate normal vector
-    #         normal = np.cross(
-    #             np.array(p2) - np.array(p1), 
-    #             np.array(p3) - np.array(p1)
-    #         )
-    #         # Normalize the normal
-    #         normal = normal / np.linalg.norm(normal)
-    #         # Calculate D in Ax + By + Cz + D = 0
-    #         D = -np.dot(normal, p1)
-    #         return normal, D
-
-    #     # Check if point is on the same side of all plane faces
-    #     point = np.array(point)
-    #     planes = [
-    #         plane_equation(hull_points[0], hull_points[1], hull_points[2]),
-    #         plane_equation(hull_points[1], hull_points[2], hull_points[3]),
-    #         plane_equation(hull_points[2], hull_points[3], hull_points[0]),
-    #         plane_equation(hull_points[3], hull_points[0], hull_points[1])
-    #     ]
-        
-    #     # Check point's position relative to each plane
-    #     return all(
-    #         # normal is the unit vector perpendicular to the plane
-    #         # if dot product of point and normal is close 0, then point is on the plane
-    #         abs(np.dot(normal, point) + D) < 0.003 
-
-    #         for normal, D in planes
-    #     )
-
-    # # Example usage
-    
-
-    # def get_movement_plane(self, base_position, target_position):
-    #     # we always pick from up
-    #     all_points = [[base_position[0],base_position[1],self.max_height],
-    #                   [target_position[0], target_position[1], self.max_height], 
-    #                   target_position,
-    #                   [base_position[0], base_position[1], target_position[2]]]
-        
-        
-        
-    #     return all_points
-
-    # def check_arm_movement_plane(self, base_position, target_position):
-    #     """Check if robot collides with any objects"""
-    #     all_points = self.get_movement_plane(base_position, target_position)
-    #     for obj_name, obj_id in self.objects_dict.items():
-    #         if (self.target_object_id == obj_id or self.robot_id == obj_id):
-    #             continue
-    #         intersect = self.is_object_in_plane(obj_id, all_points)
-    #         if intersect:
-    #             return True
-    #     return False
-
-    # def check_base_block(self, base_position):
-    #     pass
-    # def check_fixed_vertical_link(self, base_position):
-    #     pass
-
-    # def check_collision(self, base_position, target_position):
-    #     collisions = [
-    #         self.check_arm_movement_plane(base_position, target_position),
-    #         self.check_base_block(base_position),
-    #         self.check_fixed_vertical_link(base_position)
-    #     ]
-    #     return not any(collisions)
  
     def generate_search_configurations(self, target_point, distance_to_target, max_num=2):
-        """
-        Generate random points within a circle centered at target_point with given radius in XY plane.
-        Points maintain the same Z coordinate as current_point.
-        Returns points sorted by distance from current_point.
-        
-        Args:
-            current_point (np.array): Starting point [x, y, z]
-            target_point (np.array): Center of circle [x, y, z]
-            radius (float): Radius of circle
-            num_points (int): Number of random points to generate
-            
-        Returns:
-            np.array: Array of points sorted by distance from current_point
-        """
         # Convert points to numpy arrays if they aren't already
         current_point = get_robot_base_pose(self.p, self.robot_id)[0]
         current_point = np.array(current_point)
@@ -463,17 +355,6 @@ class RobotEndEffectorPlanner:
         return sorted_points
     
     def plan_end_effector_path(self, target_position):
-        """
-        Plan collision-free path for end effector
-        
-        Args:
-            target_position (list): Target 3D position
-            target_orientation (list, optional): Target orientation
-            max_attempts (int): Maximum planning attempts
-        
-        Returns:
-            bool: Success of path planning
-        """
         possible_end_positions = []
         current_point = get_robot_base_pose(self.p, self.robot_id)[0]
         dist_current_to_target = np.linalg.norm(np.array(current_point[:2]) - np.array(target_position[:2]))

@@ -16,9 +16,6 @@ from utils.tools import *
 
 sys.path.append('./')
 
-class ArmMovementDirection(Enum):
-    UP = 'up'
-    DOWN = 'down'
 
 def init_scene(p, mug_random=False):
     root_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),"../")
@@ -271,7 +268,7 @@ def init_scene(p, mug_random=False):
     #p.changeDynamics(self.bowl_id, -1, contactStiffness=0.9, contactDamping=0.9)
     object_dict['bowl'] = bowl_id
     
-    mug_position = (3.4, -2.18, 2)
+    mug_position = (3.4, -2, 2)
     mug_orientation = p.getQuaternionFromEuler([np.pi / 2.0, 0, np.pi - np.pi / 2.0])
     mug_scaling = 0.25
     mug_id = p.loadURDF(fileName=os.path.join(urdf_dir, "obj_libs/mugs/m1/model.urdf"),
@@ -300,7 +297,7 @@ def init_scene(p, mug_random=False):
     p.changeDynamics(mug_id, -1, mass=0.01)
     object_dict['mug_blue'] = mug_id
 
-    basket_position = [-1, -4.65, 0.48]
+    basket_position = [-1, -4.69, 0.48]
     basket_scaling = 0.6
     basket_orientation = p.getQuaternionFromEuler([np.pi / 2.0, 0.0, np.pi / 2.0])
     basket_id = p.loadURDF(fileName=os.path.join(urdf_dir, "obj_libs/trashbins/t2/model.urdf"), \
@@ -309,11 +306,11 @@ def init_scene(p, mug_random=False):
                                     baseOrientation=basket_orientation, \
                                     globalScaling=basket_scaling)
     p.changeVisualShape(basket_id, -1, rgbaColor=[200 / 255., 179 / 255., 179 / 255., 1])
-    obj_friction_ceof = 4000.0
+    obj_friction_ceof = 5000.0
     p.changeDynamics(basket_id, -1, lateralFriction=obj_friction_ceof)
     p.changeDynamics(basket_id, -1, rollingFriction=obj_friction_ceof)
     p.changeDynamics(basket_id, -1, spinningFriction=obj_friction_ceof)
-    p.changeDynamics(basket_id, -1, mass=1)
+    p.changeDynamics(basket_id, -1, mass=2)
     p.resetBasePositionAndOrientation(basket_id, basket_position, basket_orientation)
 
     object_dict['basket'] = basket_id

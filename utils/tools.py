@@ -13,15 +13,6 @@ import numpy as np
 
 
 def visualize_points(p, points, radius=0.05, color=[1, 0, 0, 1]):
-    """
-    Visualize a list of 3D points in PyBullet as spheres.
-    
-    Args:
-        p: PyBullet physics client
-        points: List of 3D points to visualize, e.g., [(x1, y1, z1), (x2, y2, z2), ...]
-        radius: Radius of each sphere to represent the points
-        color: RGBA color of the spheres
-    """
     bodies = []
     for point in points:
         # Create a visual sphere at each point
@@ -37,120 +28,6 @@ def visualize_points(p, points, radius=0.05, color=[1, 0, 0, 1]):
             basePosition=point
         ))
     return bodies
-
-def reorder_vertices(points):
-    """
-    Reorders a list of 3D points by sorting the points and assigning them
-    to the correct vertices for the box.
-
-    The order of vertices for a box should be as follows:
-    0: (-x, -y, -z), 1: (+x, -y, -z), 2: (+x, +y, -z), 3: (-x, +y, -z)
-    4: (-x, -y, +z), 5: (+x, -y, +z), 6: (+x, +y, +z), 7: (-x, +y, +z)
-
-    Args:
-        points: A list of 8 points (each as [x, y, z])
-
-    Returns:
-        A list of points reordered to match the above convention
-    """
-    sorted_points = sorted(points, key=lambda p: (p[2], p[1], p[0]))
-    
-    # Rearrange the sorted points into corners
-    corners = [
-        sorted_points[0],  # 0: (-x, -y, -z)
-        sorted_points[1],  # 1: (+x, -y, -z)
-        sorted_points[3],  # 2: (+x, +y, -z)
-        sorted_points[2],  # 3: (-x, +y, -z)
-        sorted_points[4],  # 4: (-x, -y, +z)
-        sorted_points[5],  # 5: (+x, -y, +z)
-        sorted_points[7],  # 6: (+x, +y, +z)
-        sorted_points[6],  # 7: (-x, +y, +z)
-    ]
-    return corners
-
-def visualize_box_from_vertices(p, vertices, color=[0, 0, 1, 0.3]):
-    """
-    Visualize a box using 6 planes from vertices.
-    Each plane is a thin box visual shape.
-    
-    Args:
-        p: PyBullet physics client
-        vertices: List of 8 3D points defining the box corners
-        color: RGBA color for the box faces
-    """
-    
-    corners = reorder_vertices(vertices)
-    corners = np.array(corners)
-    # Define faces by vertex indices
-    # Assuming vertices are in the following order:
-    # 0: (-x, -y, -z), 1: (+x, -y, -z), 2: (+x, +y, -z), 3: (-x, +y, -z)
-    # 4: (-x, -y, +z), 5: (+x, -y, +z), 6: (+x, +y, +z), 7: (-x, +y, +z)
-    faces = [
-        # Front face (-y)
-        [0, 1, 5, 4],
-        # Back face (+y)
-        [2, 3, 7, 6],
-        # Left face (-x)
-        [0, 3, 7, 4],
-        # Right face (+x)
-        [1, 2, 6, 5],
-        # Bottom face (-z)
-        [0, 1, 2, 3],
-        # Top face (+z)
-        [4, 5, 6, 7]
-    ]
-    
-    bodies = []
-    
-    for face_vertices_idx in faces:
-        # Get the four corners of the face
-        face_points = corners[face_vertices_idx]
-        
-        # Calculate face center
-        face_center = np.mean(face_points, axis=0)
-        
-        # Calculate face dimensions
-        v1 = face_points[1] - face_points[0]  # First edge
-        v2 = face_points[3] - face_points[0]  # Second edge
-        
-        # Calculate face extents
-        extent1 = np.linalg.norm(v1) / 2
-        extent2 = np.linalg.norm(v2) / 2
-        
-        # Determine which axis this face is perpendicular to
-        normal = np.cross(v1, v2)
-        normal = normal / np.linalg.norm(normal)
-        
-        # Create visual shape based on face orientation
-        if abs(normal[0]) > 0.9:  # Face is perpendicular to x-axis
-            visual_shape = p.createVisualShape(
-                p.GEOM_BOX,
-                halfExtents=[0.001, extent1, extent2],
-                rgbaColor=color
-            )
-        elif abs(normal[1]) > 0.9:  # Face is perpendicular to y-axis
-            visual_shape = p.createVisualShape(
-                p.GEOM_BOX,
-                halfExtents=[extent1, 0.001, extent2],
-                rgbaColor=color
-            )
-        else:  # Face is perpendicular to z-axis
-            visual_shape = p.createVisualShape(
-                p.GEOM_BOX,
-                halfExtents=[extent1, extent2, 0.001],
-                rgbaColor=color
-            )
-        
-        # Create body for the face
-        body = p.createMultiBody(
-            baseVisualShapeIndex=visual_shape,
-            basePosition=face_center
-        )
-        bodies.append(body)
-    
-    return bodies
-
-
 
 def visualize_aabb_filled(p, object_aabb, is_2d=False, color=[0, 0, 1, 0.3]):  # last value in color is transparency
     visual_shapes = []
@@ -200,9 +77,6 @@ def visualize_aabb_filled(p, object_aabb, is_2d=False, color=[0, 0, 1, 0.3]):  #
     return visual_shapes
     
 def remove_visual_shapes(p, visual_shapes):
-    """
-    Removes all the visual shapes stored in the visual_shapes list
-    """
     for visual_id in visual_shapes:
         p.removeBody(visual_id)  # Remove the body from the simulation
     visual_shapes.clear()  # Clear the list of visual shapes
@@ -393,17 +267,6 @@ def calculate_rotation_to_90_counterclockwise(p, robot_base_pos, target_arm_pos,
     return relative_angle
 
 def calculate_rotation_angle(p, robot_pos, target_pos, current_orientation, reverse=False):
-    """
-    Calculate the rotation angle needed to face the target
-    
-    Args:
-    robot_pos (tuple): Current robot position
-    target_pos (list): Target object position
-    current_orientation (tuple): Current robot orientation quaternion
-    
-    Returns:
-    float: Rotation angle relative to current orientation
-    """
     # Calculate vector to target
     dx = target_pos[0] - robot_pos[0]
     dy = target_pos[1] - robot_pos[1]
@@ -426,9 +289,6 @@ def calculate_rotation_angle(p, robot_pos, target_pos, current_orientation, reve
     return angle_towards
 
 def smoothly_rotate_arm_to_position(p, robot_id, joint_index, base_position, target_position, max_velocity=0.5):
-    """
-    Enhanced position-based smooth rotation
-    """
     # Calculate initial angle and difference
     #target_position = [-target_position[1], target_position[0], target_position[2]] # base and arm of bot are 90 apart
     robot_base_position, r_orientation, _ = get_robot_base_pose(p, robot_id)
@@ -480,7 +340,6 @@ def smoothly_rotate_arm_to_position(p, robot_id, joint_index, base_position, tar
     print(f"Rotation completed after {iterations} iterations")
 
 def calculate_position_angle(base_position, target_position):
-    """ Calculate precise angle between two points in 3D space """ 
     p1 = np.array(base_position) 
     p2 = np.array(target_position) 
     # Project to XY plane for angle calculation 
@@ -489,16 +348,6 @@ def calculate_position_angle(base_position, target_position):
     return angle
 
 def get_aabb_from_vertices(vertices):
-    """
-    Calculate Axis-Aligned Bounding Box from 8 vertices of a box.
-    
-    Args:
-        vertices: List of 8 points, where each point is [x, y, z]
-                 The order of vertices doesn't matter
-    
-    Returns:
-        tuple: (min_coords, max_coords) where each is [x, y, z]
-    """
     # Convert vertices to numpy array for easier computation
     vertices_array = np.array(vertices)
     
@@ -509,18 +358,6 @@ def get_aabb_from_vertices(vertices):
     return min_coords.tolist(), max_coords.tolist()
 
 def get_vertices_from_aabb(aabb_min, aabb_max):
-    """
-    Convert an Axis-Aligned Bounding Box (AABB) to vertices in the order:
-    0: (-x, -y, -z)    1: (+x, -y, -z)    2: (+x, +y, -z)    3: (-x, +y, -z)
-    4: (-x, -y, +z)    5: (+x, -y, +z)    6: (+x, +y, +z)    7: (-x, +y, +z)
-    
-    Args:
-        min_point: numpy array or list [x_min, y_min, z_min]
-        max_point: numpy array or list [x_max, y_max, z_max]
-    
-    Returns:
-        vertices: numpy array of shape (8, 3) containing the box vertices
-    """
     x_min, y_min, z_min = aabb_min
     x_max, y_max, z_max = aabb_max
     
@@ -541,17 +378,6 @@ def get_vertices_from_aabb(aabb_min, aabb_max):
 def translate_aabb(aabb,
                   current_base_pos,
                   target_base_pos):
-    """
-    Translate an AABB from current base position to target base position
-    
-    Args:
-        aabb: Tuple of (mins, maxs) each (3,) arrays
-        current_base_pos: Current base position (3,)
-        target_base_pos: Target base position (3,)
-    
-    Returns:
-        Tuple of (mins, maxs) in target position
-    """
     mins, maxs = aabb
     target_base_pos = np.array(target_base_pos)
     current_base_pos = np.array(current_base_pos)
@@ -565,17 +391,6 @@ def translate_aabb(aabb,
     return new_mins.tolist(), new_maxs.tolist()
 
 def get_aabb_top_points(aabb_min, aabb_max):
-    """
-    Get the four points of the top plane of an AABB.
-    Points are returned in counter-clockwise order starting from front-left.
-    
-    Args:
-        aabb_min: [x_min, y_min, z_min]
-        aabb_max: [x_max, y_max, z_max]
-    
-    Returns:
-        List of 4 points [x, y, z] forming the top plane
-    """
     z = aabb_max[2]  # Use the maximum z-coordinate (top plane)
     
     # Get the four points in counter-clockwise order
@@ -620,16 +435,6 @@ def get_combined_aabb(body_id_1, body_id_2):
 
 
 def get_aabb_center(aabb_min, aabb_max):
-    """
-    Calculate the center point of an AABB.
-    
-    Args:
-        aabb_min: [x_min, y_min, z_min]
-        aabb_max: [x_max, y_max, z_max]
-    
-    Returns:
-        [x_center, y_center, z_center]
-    """
     center = [
         (aabb_min[0] + aabb_max[0]) / 2,  # x center
         (aabb_min[1] + aabb_max[1]) / 2,  # y center
@@ -642,19 +447,6 @@ def transform_point(point,
                     current_base_orn,
                     target_base_pos,
                     target_base_orn):
-    """
-    Transform a point from current world position to target world position
-    
-    Args:
-        point: Point in world frame (3,)
-        current_base_pos: Current base position (3,)
-        current_base_orn: Current base orientation as quaternion (4,) [x,y,z,w]
-        target_base_pos: Target base position (3,)
-        target_base_orn: Target base orientation as quaternion (4,) [x,y,z,w]
-    
-    Returns:
-        Point in new world position (3,)
-    """
     # Calculate relative transformation
     current_rot = Rotation.from_quat(current_base_orn)
     target_rot = Rotation.from_quat(target_base_orn)
@@ -688,19 +480,6 @@ def transform_aabb(aabb,
                   current_base_orn,
                   target_base_pos,
                   target_base_orn):
-    """
-    Transform an AABB from current base frame to target base frame
-    
-    Args:
-        aabb: Tuple of (mins, maxs) each (3,) arrays
-        current_base_pos: Current base position (3,)
-        current_base_orn: Current base orientation as quaternion (4,) [x,y,z,w]
-        target_base_pos: Target base position (3,)
-        target_base_orn: Target base orientation as quaternion (4,) [x,y,z,w]
-    
-    Returns:
-        Tuple of (mins, maxs) in target frame
-    """
     mins, maxs = aabb
     
     # Get all 8 corners of the AABB
@@ -754,9 +533,7 @@ def get_obj_aabb(p, obj_id):
 
 
 def get_reverse_quaternion_pybullet(p, current_pos, current_orn):
-    """
-    Get quaternion for 180-degree rotation using PyBullet.
-    """
+
     rotation_180 = [0, 0, 1, 0]  # 180-degree rotation quaternion
     
     # PyBullet handles the quaternion multiplication

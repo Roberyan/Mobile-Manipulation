@@ -2,12 +2,6 @@ numpy
 opencv-python
 matplotlib
 scikit-image
-imageio
-torch
-torchvision
-torchsummary
-tensorboardX
-pyrealsense2
 Pillow
-opencv-python
-scikit-image
+cachetools
+pybullet

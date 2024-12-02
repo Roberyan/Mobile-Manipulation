@@ -113,8 +113,6 @@ class CollisionDetectingNavigator(RobotNavigator):
                 break
             aim_x, aim_y = aim_tuple
             self.exploring_id = self.visualize_sampled_points((aim_x, aim_y))
-            print("reverse_mode", self.reverse_move)
-            # real action part
             while True:
                 try:
                     time.sleep(1. / 240.)
@@ -127,7 +125,6 @@ class CollisionDetectingNavigator(RobotNavigator):
                     # Turn toward the target direction
                     self.turn_to_position(aim_x, aim_y)
                     
-                    # if self.if_close_enough((current_x, current_y), (aim_x, aim_y)):
                     if self.if_within_range((aim_x, aim_y), 0.1):
                         base_control(self.robot, self.p, forward=0, turn=0)
                         break
