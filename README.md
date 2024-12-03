@@ -13,11 +13,13 @@
 
 # Run
 
-`python simulation/main.py`
-`click 'u' for bot to collect the chosen obj`
+1. `python simulation/main.py`
+2. `Press 'u' for bot to collect the chosen obj`
+
+
 We have 4 demo videos
 1. Full path video shows the robot successfully planning a path and avoiding collisons to reach across the room and grasp an object.
-2. The other three videos showcase the robot successfully planning a path and picking three objects (red, blue and white cups) and dropping them in end location. 
+2. The other three videos showcase the robot successfully planning a path and picking three objects (blue, red and white cups in this order) and dropping them in end location. 
 
 
 # References

@@ -40,9 +40,10 @@ while (1):
     print("Press 'u' to start")
     for k,v in keys.items():
         if (k == ord('u') and (v & p.KEY_WAS_TRIGGERED) and not gripped):
-            obj_id = 18
-            grasper.collect_object(object_id=obj_id)
-            grasper.drop_object_at_goal(goal_obj_id=19)
+            for obj_id in (18, 17, 22): # blue red white cups
+                grasper.collect_object(object_id=obj_id)
+                grasper.drop_object_at_goal(goal_obj_id=19)
+                time.sleep(2)
             gripped=True
             
 
